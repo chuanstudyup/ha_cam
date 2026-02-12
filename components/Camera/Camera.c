@@ -1,0 +1,158 @@
+#include <stdio.h>
+#include "Camera.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "camera_pins.h"
+
+#define TAG "Camera"
+
+static framesize_t l_frameSize = FRAMESIZE_XGA;
+
+// indexed by frame size - needs to be consistent with sensor.h framesize_t enum
+const frameStruct frameData[] = {
+  {"96X96", 96, 96, 30, 1, 1},   // 2MP sensors
+  {"QQVGA", 160, 120, 30, 1, 1},
+  {"128X128", 128, 128, 30, 1, 1},
+  {"QCIF", 176, 144, 30, 1, 1}, 
+  {"HQVGA", 240, 176, 30, 2, 1}, 
+  {"240X240", 240, 240, 30, 2, 1}, 
+  {"QVGA", 320, 240, 30, 2, 1},
+  {"320X320", 320, 320, 30, 2, 1}, 
+  {"CIF", 400, 296, 25, 2, 1},  
+  {"HVGA", 480, 320, 25, 2, 1}, 
+  {"VGA", 640, 480, 20, 3, 1}, 
+  {"SVGA", 800, 600, 20, 3, 1}, 
+  {"XGA", 1024, 768, 15, 3, 1},   
+  {"HD", 1280, 720, 15, 3, 1}, 
+  {"SXGA", 1280, 1024, 10, 3, 1}, 
+  {"UXGA", 1600, 1200, 10, 4, 1},  
+  {"FHD", 1920, 1080, 5, 3, 1},    // 3MP Sensors
+  {"P_HD", 720, 1280, 5, 3, 1},
+  {"P_3MP", 864, 1536, 5, 3, 1},
+  {"QXGA", 2048, 1536, 5, 4, 1},
+  {"QHD", 2560, 1440, 5, 4, 1},   // 5MP Sensors
+  {"WQXGA", 2560, 1600, 5, 4, 1},
+  {"P_FHD", 1080, 1920, 5, 4, 1},
+  {"QSXGA", 2560, 1920, 4, 4, 1},
+  {"5MP", 2592, 1944, 4, 4, 1}
+};
+
+esp_err_t init_camera(void)
+{
+#if ESP_CAMERA_SUPPORTED
+    //initialize the camera
+     camera_config_t camera_config = {
+        .pin_pwdn = PWDN_GPIO_NUM,
+        .pin_reset = RESET_GPIO_NUM,
+        .pin_xclk = XCLK_GPIO_NUM,
+        .pin_sccb_sda = SIOD_GPIO_NUM,
+        .pin_sccb_scl = SIOC_GPIO_NUM,
+
+        .pin_d7 = Y9_GPIO_NUM,
+        .pin_d6 = Y8_GPIO_NUM,
+        .pin_d5 = Y7_GPIO_NUM,
+        .pin_d4 = Y6_GPIO_NUM,
+        .pin_d3 = Y5_GPIO_NUM,
+        .pin_d2 = Y4_GPIO_NUM,
+        .pin_d1 = Y3_GPIO_NUM,
+        .pin_d0 = Y2_GPIO_NUM,
+        .pin_vsync = VSYNC_GPIO_NUM,
+        .pin_href = HREF_GPIO_NUM,
+        .pin_pclk = PCLK_GPIO_NUM,
+
+        //XCLK 20MHz or 10MHz for OV2640 double FPS (Experimental)
+        .xclk_freq_hz = 20000000,
+        .ledc_timer = LEDC_TIMER_0,
+        .ledc_channel = LEDC_CHANNEL_0,
+
+        .pixel_format = PIXFORMAT_JPEG, //YUV422,GRAYSCALE,RGB565,JPEG
+        .frame_size = l_frameSize,    //QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
+
+        .jpeg_quality = 12, //0-63, for OV series camera sensors, lower number means higher quality
+        .fb_count = FB_CNT,       //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
+        .fb_location = CAMERA_FB_IN_PSRAM,
+        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+    };
+
+    esp_err_t err = esp_camera_init(&camera_config);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Camera Init Failed");
+        return err;
+    }
+
+    sensor_t* sen = esp_camera_sensor_get();
+    camera_sensor_info_t *info = esp_camera_sensor_get_info(&sen->id);
+    ESP_LOGI(TAG, "Use sensor %s, %d, %d. Max Size: %d, %s support jpeg", 
+        info->name, info->pid, info->model, info->max_size, info->support_jpeg ? "": "not");
+
+    return ESP_OK;
+#else
+    ESP_LOGE(TAG, "Camera not supported on this board");
+    return ESP_FAIL;
+#endif
+}
+
+/**
+ * @brief 获取传感器型号名称
+ * 
+ * 通过ESP32相机传感器接口获取当前相机的传感器信息，并返回传感器型号名称。
+ * 
+ * @return char* 指向传感器型号名称字符串的指针
+ */
+const char* get_seneor_model_name(void)
+{
+    sensor_t* sen = esp_camera_sensor_get();
+    if (!sen) {
+        ESP_LOGE(TAG, "Sensor not found");
+        return "No Sensor";
+    }
+    camera_sensor_info_t *info = esp_camera_sensor_get_info(&sen->id);
+    return info->name;
+}
+
+/* try to read a frame to test camera */
+esp_err_t test_camera(void)
+{
+    int64_t tm = esp_timer_get_time();
+
+    if (sizeof(frameData) / sizeof(frameStruct) != FRAMESIZE_INVALID) {
+        ESP_LOGE(TAG, "frameData define not match enum framesize_t in sensor.h. Please check your code.");
+        return ESP_FAIL;
+    }
+
+    camera_fb_t *pic = esp_camera_fb_get();
+    if (!pic) {
+        ESP_LOGE(TAG, "Camera capture failed");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Read a frame %s(%dx%d), size=%d, take %lld ms", pic->format == PIXFORMAT_JPEG ? "JPEG" : "RAW",
+    pic->width, pic->height, pic->len, (esp_timer_get_time() - tm) / 1000);
+
+    /* check the frame size */
+    if (pic->width != frameData[l_frameSize].frameWidth || pic->height != frameData[l_frameSize].frameHeight) {
+        ESP_LOGE(TAG, "Camera frame size error, expected %dx%d", frameData[l_frameSize].frameWidth, frameData[l_frameSize].frameHeight);
+        esp_camera_fb_return(pic);
+        return ESP_FAIL;
+    }
+
+    esp_camera_fb_return(pic);
+
+    return ESP_OK;
+}
+
+framesize_t get_camera_frame_size(void)
+{
+    return l_frameSize;
+}
+
+void get_camera_frame_dimension(int *width, int *height)
+{
+    if (width) {
+        *width = frameData[l_frameSize].frameWidth;
+    }
+    if (height) {
+        *height = frameData[l_frameSize].frameHeight;
+    }
+}

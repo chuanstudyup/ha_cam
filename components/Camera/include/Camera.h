@@ -4,6 +4,8 @@
 #include "esp_err.h"
 #include "cam_info.h"
 #include "esp_camera.h"
+#include "cJSON.h"
+
 
 #define FB_CNT 3 // number of frame buffers
 
@@ -20,5 +22,11 @@ void get_camera_frame_dimension(int *width, int *height);
  * @return char* 指向传感器型号名称字符串的指针
  */
 const char* get_seneor_model_name(void);
+
+char *get_camera_sensor_settings_json(void);
+
+char *get_camera_supported_framesizes_json(void);
+
+esp_err_t apply_camera_config(cJSON *config_json);
 
 #endif /* _CAMERA_H_ */

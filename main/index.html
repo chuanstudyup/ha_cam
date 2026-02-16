@@ -8,11 +8,15 @@
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 25px;
             background-color: #f5f5f5;
             color: #333;
+        }
+        .main-container {
+            display: flex;
+            gap: 25px;
         }
         .container {
             display: flex;
@@ -28,6 +32,7 @@
             margin: 0;
             padding-bottom: 10px;
             border-bottom: 2px solid #eee;
+            text-align: center;
         }
         .video-container {
             position: relative;
@@ -42,10 +47,17 @@
             aspect-ratio: 4/3;
             object-fit: cover;
         }
-        .controls {
+        .top-controls {
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .config-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 15px;
         }
         button {
             padding: 10px 20px;
@@ -75,15 +87,21 @@
             padding: 20px;
             border-radius: 8px;
             background-color: #f9f9f9;
+            min-width: 300px;
         }
         .config-section h2 {
             margin-top: 0;
             color: #2c3e50;
+            text-align: center;
         }
         .config-form {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            display: flex;
+            flex-direction: column;
             gap: 15px;
+        }
+        .config-form > div {
+            display: flex;
+            flex-direction: column;
         }
         .config-form label {
             display: block;
@@ -99,12 +117,37 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        .media-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
         #snapshot {
+            width: 100%;
             max-width: 100%;
             display: none;
-            margin-top: 15px;
             border-radius: 6px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .media-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .media-container h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            text-align: center;
+        }
+        @media (max-width: 900px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .config-section {
+                min-width: auto;
+            }
         }
         @media (max-width: 600px) {
             body {
@@ -114,61 +157,79 @@
                 padding: 15px;
                 gap: 15px;
             }
-            .controls {
+            .top-controls, .config-controls {
                 gap: 8px;
             }
             button {
-                min-width: 100%;
+                min-width: 100px;
             }
         }
     </style>
-</head>
 <body>
     <div class="container">
         <h1>ESP32 CAM Control Panel</h1>
         
-        <!-- 视频流显示区域 -->
-        <div class="video-container">
-            <img id="stream">
-        </div>
-        
-        <!-- 控制按钮 -->
-        <div class="controls">
+        <!-- 顶部控制按钮 -->
+        <div class="top-controls">
             <button onclick="startStream()">Start Stream</button>
             <button onclick="stopStream()">Stop Stream</button>
             <button onclick="captureImage()">Capture Image</button>
-            <button onclick="saveConfig()">Save Config</button>
         </div>
         
-        <!-- 抓拍的图片显示区域 -->
-        <img id="snapshot" alt="Captured Image">
-        
-        <!-- 配置区域 -->
-        <div class="config-section">
-            <h2>Camera Configuration</h2>
-            <form class="config-form" id="configForm">
-                <div>
-                    <label for="frameSize">Frame Size:</label>
-                    <select id="frameSize" name="frameSize">
-                        <option value="0">QQVGA (160x120)</option>
-                        <option value="1">QVGA (320x240)</option>
-                        <option value="2">VGA (640x480)</option>
-                        <option value="3">SVGA (800x600)</option>
-                    </select>
+        <div class="main-container">
+            <!-- 左侧配置区域 -->
+            <div class="config-section">
+                <h2>Camera Configuration</h2>
+                <div class="config-controls">
+                    <button onclick="loadCameraConfig()">Load Config</button>
+                    <button onclick="saveConfig()">Save Config</button>
                 </div>
-                <div>
-                    <label for="quality">JPEG Quality (10-63):</label>
-                    <input type="number" id="quality" name="quality" min="10" max="63" value="40">
+                <form class="config-form" id="configForm">
+                    <div>
+                        <label for="frameSize">Resolution:</label>
+                        <select id="frameSize" name="frameSize">
+                            <option value="">Loading resolutions...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="quality">JPEG Quality (10-63):</label>
+                        <input type="number" id="quality" name="quality" min="10" max="63" value="40">
+                    </div>
+                    <div>
+                        <label for="brightness">Brightness (-2 to 2):</label>
+                        <input type="number" id="brightness" name="brightness" min="-2" max="2" value="0">
+                    </div>
+                    <div>
+                        <label for="contrast">Contrast (0 to 2):</label>
+                        <input type="number" id="contrast" name="contrast" min="0" max="2" value="1">
+                    </div>
+                    <div>
+                        <label for="saturation">Saturation (-2 to 2):</label>
+                        <input type="number" id="saturation" name="saturation" min="-2" max="2" value="0">
+                    </div>
+                    <div>
+                        <label for="sharpness">Sharpness (-2 to 2):</label>
+                        <input type="number" id="sharpness" name="sharpness" min="-2" max="2" value="0">
+                    </div>
+                </form>
+            </div>
+            
+            <!-- 右侧媒体区域 -->
+            <div class="media-section">
+                <!-- 视频流显示区域 -->
+                <div class="media-container">
+                    <h3>Live Stream</h3>
+                    <div class="video-container">
+                        <img id="stream">
+                    </div>
                 </div>
-                <div>
-                    <label for="brightness">Brightness (-2 to 2):</label>
-                    <input type="number" id="brightness" name="brightness" min="-2" max="2" value="0">
+                
+                <!-- 抓拍的图片显示区域 -->
+                <div class="media-container">
+                    <h3>Captured Image</h3>
+                    <img id="snapshot" alt="Captured Image">
                 </div>
-                <div>
-                    <label for="contrast">Contrast (0 to 2):</label>
-                    <input type="number" id="contrast" name="contrast" min="0" max="2" value="1">
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 
@@ -213,9 +274,18 @@
         
         // 保存配置
         function saveConfig() {
-            // 获取表单数据并转换为普通对象
-            const formData = new FormData(document.getElementById('configForm'));
-            const configData = Object.fromEntries(formData);
+            const configData = {};
+            
+            // 获取分辨率（整数类型）
+            const frameSizeSelect = document.getElementById('frameSize');
+            configData.frameSize = parseInt(frameSizeSelect.value, 10);
+            
+            // 获取其他数值类型的参数
+            configData.quality = parseInt(document.getElementById('quality').value, 10);
+            configData.brightness = parseInt(document.getElementById('brightness').value, 10);
+            configData.contrast = parseInt(document.getElementById('contrast').value, 10);
+            configData.saturation = parseInt(document.getElementById('saturation').value, 10);
+            configData.sharpness = parseInt(document.getElementById('sharpness').value, 10);
             
             // 调试信息：显示发送的配置数据
             console.log('Sending config data:', configData);
@@ -230,7 +300,8 @@
             })
             .then(response => {
                 if (response.ok) {
-                    alert('Configuration saved successfully!');
+                    // 成功不弹窗
+                    console.log('Configuration saved successfully');
                 } else {
                     alert('Failed to save configuration');
                 }
@@ -260,6 +331,93 @@
         
         // 页面加载时不自动启动流媒体，等待用户点击按钮
         // window.onload = startStream; // 注释掉自动启动
+        
+        // 全局变量存储分辨率列表
+        let supportedResolutions = [];
+        
+        // 加载支持的分辨率列表（只执行一次）
+        function loadSupportedResolutions() {
+            fetch('/config?cap=framesizes')
+                .then(response => response.json())
+                .then(data => {
+                    const frameSizeSelect = document.getElementById('frameSize');
+                    frameSizeSelect.innerHTML = '';
+                    
+                    if (data.supported_framesizes && Array.isArray(data.supported_framesizes)) {
+                        supportedResolutions = data.supported_framesizes;
+                        supportedResolutions.forEach((resolution, index) => {
+                            const option = document.createElement('option');
+                            option.value = index;
+                            option.textContent = resolution;
+                            frameSizeSelect.appendChild(option);
+                        });
+                    }
+                    
+                    // 加载完成后加载当前配置
+                    loadCurrentConfig();
+                })
+                .catch(error => {
+                    console.error('Error loading supported resolutions:', error);
+                    alert('Error loading supported resolutions');
+                });
+        }
+        
+        // 加载当前相机配置
+        function loadCurrentConfig() {
+            fetch('/config?cfg=sensor')
+                .then(response => response.json())
+                .then(config => {
+                    console.log('Loaded camera config:', config);
+                    
+                    // 更新表单字段
+                    if (config.framesize) {
+                        const frameSizeSelect = document.getElementById('frameSize');
+                        for (let i = 0; i < frameSizeSelect.options.length; i++) {
+                            if (frameSizeSelect.options[i].textContent === config.framesize) {
+                                frameSizeSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (config.quality !== undefined) {
+                        document.getElementById('quality').value = config.quality;
+                    }
+                    
+                    if (config.brightness !== undefined) {
+                        document.getElementById('brightness').value = config.brightness;
+                    }
+                    
+                    if (config.contrast !== undefined) {
+                        document.getElementById('contrast').value = config.contrast;
+                    }
+                    
+                    if (config.saturation !== undefined) {
+                        document.getElementById('saturation').value = config.saturation;
+                    }
+                    
+                    if (config.sharpness !== undefined) {
+                        document.getElementById('sharpness').value = config.sharpness;
+                    }
+                    
+                    // 成功不弹窗
+                    console.log('Camera configuration loaded successfully');
+                })
+                .catch(error => {
+                    console.error('Error loading camera config:', error);
+                    alert('Error loading camera configuration');
+                });
+        }
+        
+        // 用户点击加载配置按钮
+        function loadCameraConfig() {
+            loadCurrentConfig();
+        }
+        
+        // 页面加载时自动加载分辨率列表和配置
+        window.addEventListener('load', function() {
+            loadSupportedResolutions();
+        });
         
         // 初始化按钮状态
         updateButtonStates();

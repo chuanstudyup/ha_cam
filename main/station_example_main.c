@@ -376,6 +376,100 @@ esp_err_t httpd_handler(httpd_req_t *req)
     return ESP_FAIL;
 }
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+// /config?cfg=sensor
+// /config?cap=framesizes
+esp_err_t get_config_html_handler(httpd_req_t *req)
+{
+    // 处理GET请求
+    char cfg[32] = {0};
+    if (httpd_req_get_url_query_str(req, cfg, sizeof(cfg)) == ESP_OK)
+    {
+        char param[16] = {0};
+        if (httpd_query_key_value(cfg, "cfg", param, sizeof(param)) == ESP_OK)
+        {
+            if (strcmp(param, "sensor") == 0)
+            {
+                char *json_str = get_camera_sensor_settings_json();
+                if (json_str)
+                {
+                    httpd_resp_set_type(req, "application/json");
+                    httpd_resp_send(req, json_str, strlen(json_str));
+                    free(json_str);
+                    return ESP_OK;
+                }
+            }
+        }
+        if (httpd_query_key_value(cfg, "cap", param, sizeof(param)) == ESP_OK)
+        {
+            if (strcmp(param, "framesizes") == 0)
+            {
+                char *json_str = get_camera_supported_framesizes_json();
+                if (json_str)
+                {
+                    httpd_resp_set_type(req, "application/json");
+                    httpd_resp_send(req, json_str, strlen(json_str));
+                    free(json_str);
+                    return ESP_OK;
+                }
+            }
+        }
+    }
+    httpd_resp_set_status(req, "500 Query data error");
+    httpd_resp_sendstr(req, NULL);
+
+    return ESP_OK;
+}
+
+esp_err_t set_config_html_handler(httpd_req_t *req)
+{
+    // 处理POST请求（配置保存）
+    if (req->method == HTTP_POST)
+    {
+        char buf[256];
+        int ret, remaining = req->content_len;
+
+        // 读取请求体
+        ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf) - 1));
+        if (ret <= 0)
+        {
+            httpd_resp_set_status(req, "500 Read error");
+            httpd_resp_sendstr(req, NULL);
+            return ESP_OK;
+        }
+
+        buf[ret] = '\0';
+        ESP_LOGI(TAG, "Received config: %s", buf);
+
+        // 解析JSON配置
+        cJSON *config_json = cJSON_Parse(buf);
+        if (config_json)
+        {
+            esp_err_t result = apply_camera_config(config_json);
+            cJSON_Delete(config_json);
+
+            if (result == ESP_OK)
+            {
+                httpd_resp_set_status(req, "200 OK");
+                httpd_resp_sendstr(req, "Configuration applied successfully");
+            }
+            else
+            {
+                httpd_resp_set_status(req, "500 Apply error");
+                httpd_resp_sendstr(req, "Failed to apply configuration");
+            }
+        }
+        else
+        {
+            httpd_resp_set_status(req, "400 Parse error");
+            httpd_resp_sendstr(req, "Invalid JSON format");
+        }
+        return ESP_OK;
+    }
+
+    return ESP_OK;
+}
+
 httpd_handle_t setup_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -399,11 +493,25 @@ httpd_handle_t setup_server(void)
         .handler = index_html_handler,
         .user_ctx = NULL};
 
+    httpd_uri_t config_get = {
+        .uri = "/config",
+        .method = HTTP_GET,
+        .handler = get_config_html_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t config_set = {
+        .uri = "/config",
+        .method = HTTP_POST,
+        .handler = set_config_html_handler,
+        .user_ctx = NULL};
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK)
     {
         httpd_register_uri_handler(stream_httpd, &uri_get);
         httpd_register_uri_handler(stream_httpd, &picture_get);
         httpd_register_uri_handler(stream_httpd, &index_get);
+        httpd_register_uri_handler(stream_httpd, &config_get);
+        httpd_register_uri_handler(stream_httpd, &config_set);
     }
 
     return stream_httpd;
@@ -450,8 +558,6 @@ static void start_sustainTasks(void)
         xTaskCreate(sustainTask, taskName, 4096, &sustainReq[i].taskNum, 5, &sustainHandle[i]);
     }
 }
-
-
 
 void app_main(void)
 {

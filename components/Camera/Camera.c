@@ -8,7 +8,7 @@
 
 #define NVS_SENSOR_KEY "nvs_sen"
 
-static framesize_t l_frameSize = FRAMESIZE_XGA;
+static framesize_t l_frameSize = FRAMESIZE_FHD;
 
 // indexed by frame size - needs to be consistent with sensor.h framesize_t enum
 const frameStruct frameData[] = {
@@ -257,6 +257,10 @@ esp_err_t apply_camera_config(cJSON *config_json)
         else if (cJSON_IsString(frameSize))
         {
             fs = atoi(frameSize->valuestring);
+        }
+        if (fs >= FRAMESIZE_FHD)
+        {
+            fs = FRAMESIZE_FHD; // 默认最大分辨率
         }
         if (fs >= 0 && fs < FRAMESIZE_INVALID) {
             sen->set_framesize(sen, (framesize_t)fs);

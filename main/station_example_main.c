@@ -19,13 +19,14 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "esp_timer.h"
+#include "esp_netif_sntp.h"
 
 #include "ChipInfo.h"
 #include "Camera.h"
 #include "vCenter.h"
 #include "EasyRTSPServer.h"
 #include "Utils.h"
-
+#include "storage.h"
 #include "ha_mqtt_client.h"
 
 /* The examples use WiFi configuration that you can set via project configuration menu
@@ -176,6 +177,31 @@ void wifi_init_sta(void)
     else
     {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
+    }
+}
+
+static bool time_sntp_init(void)
+{
+    // Initialize SNTP
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&config);
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to update system time within 10s timeout");
+        return false;
+    }
+    else
+    {
+        // set timezones
+        setenv("TZ", "CST-8", 1); // Set timezone to China Standard Time (CST) which is UTC+8
+        tzset();                  // Apply the timezone setting
+        // Get the current time and print it
+        time_t now;
+        struct tm timeinfo;
+        time(&now);
+        localtime_r(&now, &timeinfo);
+        ESP_LOGI(TAG, "System time updated successfully. Current time: %s", asctime(&timeinfo));
+        return true;
     }
 }
 
@@ -561,6 +587,74 @@ static void start_sustainTasks(void)
     }
 }
 
+#include "utilsFS.h"
+
+static TaskHandle_t save_picture_to_sdcardHandle = NULL;
+
+// 创建一个任务，定周期保存图片到SD卡
+void save_picture_to_sdcard(void *pvParameters)
+{
+    // 首先判断文件夹YYYY-MM-DD是否存在，不存在则创建
+    char folder_name[64] = {0};
+    char file_name[128] = {0};
+    int64_t tm1 = 0, tm2 = 0;
+
+    // 从参数中获取周期
+    int period = *(int *)pvParameters;
+
+    while (1)
+    {
+        tm1 = esp_timer_get_time(); // us
+
+        // 判断文件夹是否存在，不存在则创建
+        dateFormat(folder_name, sizeof(folder_name), true); // true表示创建当天的文件夹
+        if (access(folder_name, F_OK) != 0)
+        {
+            if (mkdir(folder_name, 0777) != 0)
+            {
+                ESP_LOGE(TAG, "Failed to create date folder");
+                return;
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Created folder: %s", folder_name);
+            }
+        }
+        
+
+        // 获取当前时间，生成文件名
+        dateFormat(file_name, sizeof(file_name), false); // true表示生成带有时间戳的文件名
+        strcat(file_name, ".jpg");                       // 添加.jpg后缀
+
+        // 从摄像头获取一帧图像数据
+        video_node *node = get_latest_video_frame();
+        if (!node)
+        {
+            ESP_LOGE(TAG, "Failed to get video frame");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
+        // 将图像数据保存到SD卡
+        FILE *f = fopen(file_name, "wb");
+        if (f == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to open file for writing: %s", file_name);
+            put_video_frame(node);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        fwrite(node->data, 1, node->size, f);
+        fclose(f);
+        put_video_frame(node);
+        tm2 = esp_timer_get_time(); // us
+
+        ESP_LOGI(TAG, "Saved picture to SD card: %s, time: %lld ms", file_name, (tm2 - tm1) / 1000);
+        // 等待下一个周期
+        vTaskDelay(period / portTICK_PERIOD_MS);
+    }
+}
+
 void app_main(void)
 {
     // Initialize NVS
@@ -583,6 +677,16 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
+
+    time_sntp_init();
+
+    // check if SD card is mounted
+    if (!sdcard_init())
+    {
+        ESP_LOGE(TAG, "sdcard_init failed");
+        return;
+    }
+    ESP_LOGI(TAG, "SD Card Mounted Successfully");
 
     if (ESP_OK != init_camera())
     {
@@ -612,6 +716,8 @@ void app_main(void)
     netLocalIP(ip_str, NULL, NULL);
     RTSPServer *rtspServer = RTSPServer_Create(width, height);
     RTSPServer_Start(rtspServer, ip_str, 554);
+
+    xTaskCreate(save_picture_to_sdcard, "save_picture_to_sdcard", 8192, (void *)&(int){360000}, 5, &save_picture_to_sdcardHandle);
 
     checkMemory("init complete");
 

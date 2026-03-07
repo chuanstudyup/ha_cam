@@ -1146,8 +1146,7 @@ bool RTSPServer_Start(RTSPServer *rtspServer, char *serverip, int port)
 {
   rtspServer->ServerPort = port;
   snprintf(rtspServer->streamInfo.serverIP, LEN_MAX_IP, "%s", serverip);
-  //snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u/%s", rtspServer->streamInfo.serverIP, rtspServer->ServerPort, rtspServer->streamInfo.suffix);
-  snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u", rtspServer->streamInfo.serverIP, rtspServer->ServerPort);
+  snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u/%s", rtspServer->streamInfo.serverIP, rtspServer->ServerPort, rtspServer->streamInfo.suffix);
 
   rtspServer->tcpServer = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (rtspServer->tcpServer == -1)

@@ -2,6 +2,8 @@
 #include "mbedtls/base64.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "vCenter.h"
+
 #ifdef ENABL_AUDIO_STREAM
 #include "Mic.h"
 #define AUDIO_BUFFER_SIZE (MIC_SMPLING_RATE / AUDIO_FRAME_FPS * MIC_DATA_BIT_WIDTH / 8) // Number of bytes to send in one packet
@@ -693,7 +695,7 @@ enum RTSP_CMD_TYPES Handle_RtspRequest(RTSPSession *session, char *aRequest, int
   if (!checkURL(session, aRequest))
   {
     Handle_RtspNotFound(session, client);
-    ESP_LOGI(TAG, "parseCSeq error, bad request\n");
+    ESP_LOGI(TAG, "checkURL error, bad request\n");
     return RTSP_UNKNOWN;
   }
   if (!parseCSeq(aRequest, &session->CSeq))
@@ -947,9 +949,6 @@ RTSPServer *RTSPServer_Create(int width, int height)
   return server;
 }
 
-extern uint8_t *waitRTSPFrame(size_t *frameSize);
-extern void releaseRTSPFrame();
-
 static void RTSPServer_Stream(RTSPServer *rtspServer)
 {
   int i = 0;
@@ -960,6 +959,8 @@ static void RTSPServer_Stream(RTSPServer *rtspServer)
   static uint8_t audioBuf[AUDIO_BUFFER_SIZE] = {0}; // buffer for audio data
 #endif
   int64_t now = esp_timer_get_time() / 1000; // get current time in ms
+  video_node *node = NULL;
+  unsigned int vtimestamp = 0;
 
   int streamingCounts = RTSPServer_GetStreamingSessionCounts(rtspServer);
   if (streamingCounts > 0)
@@ -968,17 +969,17 @@ static void RTSPServer_Stream(RTSPServer *rtspServer)
     { // handle clock rollover
       // streaming video frame
       lastimage = now;
-      size_t bytesSize = 0;
-      BufPtr bytes = NULL;
-      bytes = (BufPtr)waitRTSPFrame(&bytesSize);
-      if (!bytes)
+      node = get_video_frame(vtimestamp);
+      if (!node)
       {
-        ESP_LOGE(TAG, "waitRTSPFrame failed\n");
+        ESP_LOGE(TAG, "get_video_frame null\n");
         return;
       }
       int64_t waittime = esp_timer_get_time() / 1000 - now;
+      vtimestamp = node->timestamp + 1;
 
-      uint32_t frameSize = (uint32_t)bytesSize;
+      BufPtr bytes = (BufPtr)node->data;
+      uint32_t frameSize = (uint32_t)node->size;
       // locate quant tables if possible
       BufPtr qtable0 = NULL;
       BufPtr qtable1 = NULL;
@@ -1001,7 +1002,7 @@ static void RTSPServer_Stream(RTSPServer *rtspServer)
         }
       } while (offset != 0);
 
-      releaseRTSPFrame();
+      put_video_frame(node); // release the frame back to driver
 
       int streamingClients = RTSPServer_GetStreamingSessionCounts(rtspServer);
       int costTime = esp_timer_get_time() / 1000 - now;
@@ -1052,8 +1053,6 @@ static void RTSPServer_Stream(RTSPServer *rtspServer)
   }
 }
 
-extern void changeRTSPStreaming(bool enable);
-
 static void rtspServerTask(void *arg)
 {
   RTSPServer *server = (RTSPServer *)arg;
@@ -1073,8 +1072,6 @@ static void rtspServerTask(void *arg)
       ESP_LOGI(TAG, "Client connected: %s:%d",
                inet_ntoa(((struct sockaddr_in *)&addr)->sin_addr),
                ntohs(((struct sockaddr_in *)&addr)->sin_port));
-
-      changeRTSPStreaming(true);
 
       // Set the client to non-blocking mode
       int flags = fcntl(client, F_GETFL, 0);
@@ -1122,7 +1119,6 @@ static void rtspServerTask(void *arg)
       if (0 == RTSPServer_GetSessionCounts(server))
       {
         sleepTime = 100; // no client connected, sleep for a long while
-        changeRTSPStreaming(false);
       }
     }
 
@@ -1150,7 +1146,8 @@ bool RTSPServer_Start(RTSPServer *rtspServer, char *serverip, int port)
 {
   rtspServer->ServerPort = port;
   snprintf(rtspServer->streamInfo.serverIP, LEN_MAX_IP, "%s", serverip);
-  snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u/%s", rtspServer->streamInfo.serverIP, rtspServer->ServerPort, rtspServer->streamInfo.suffix);
+  //snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u/%s", rtspServer->streamInfo.serverIP, rtspServer->ServerPort, rtspServer->streamInfo.suffix);
+  snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u", rtspServer->streamInfo.serverIP, rtspServer->ServerPort);
 
   rtspServer->tcpServer = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (rtspServer->tcpServer == -1)

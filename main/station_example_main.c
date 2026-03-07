@@ -23,6 +23,8 @@
 #include "ChipInfo.h"
 #include "Camera.h"
 #include "vCenter.h"
+#include "EasyRTSPServer.h"
+#include "Utils.h"
 
 #include "ha_mqtt_client.h"
 
@@ -602,6 +604,14 @@ void app_main(void)
 
     setup_server();
     start_sustainTasks();
+
+    // start rtsp server
+    int width = 0, height = 0;
+    char ip_str[16] = {0};
+    get_camera_frame_dimension(&width, &height);
+    netLocalIP(ip_str, NULL, NULL);
+    RTSPServer *rtspServer = RTSPServer_Create(width, height);
+    RTSPServer_Start(rtspServer, ip_str, 554);
 
     checkMemory("init complete");
 

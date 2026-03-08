@@ -15,6 +15,10 @@
 #include "esp_camera.h"
 #include "cJSON.h"
 #include "esp_http_server.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "esp_system.h"
+#include "freertos/event_groups.h"
 
 #include "Camera.h"
 #include "vCenter.h"
@@ -41,6 +45,11 @@ static TaskHandle_t sustainHandle[MAX_STREAMS];
 static httpd_sustain_req_t sustainReq[MAX_STREAMS] = {0};
 #define AUX_STRUCT_SIZE 2048 // size of http request aux data - sizeof(struct httpd_req_aux) = 1108 in esp_http
 static SemaphoreHandle_t mutex;
+
+// OTA状态
+static bool ota_in_progress = false;
+static int ota_progress = 0;
+static char ota_message[256] = {0};
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -201,6 +210,20 @@ static esp_err_t index_html_handler(httpd_req_t *req)
 }
 
 /**
+ * @brief OTA页面HTTP处理函数
+ */
+static esp_err_t ota_html_handler(httpd_req_t *req)
+{
+    extern const char ota_html_start[] asm("_binary_ota_html_start");
+    extern const char ota_html_end[] asm("_binary_ota_html_end");
+    size_t ota_html_len = ota_html_end - ota_html_start;
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, ota_html_start, ota_html_len);
+    return ESP_OK;
+}
+
+/**
  * @brief 获取配置HTTP处理函数
  * /config?cfg=sensor - 获取传感器配置
  * /config?cap=framesizes - 获取支持的帧大小
@@ -296,6 +319,187 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
         }
         return ESP_OK;
     }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 获取OTA状态处理函数
+ * GET /ota - 返回OTA状态和版本信息
+ */
+static esp_err_t ota_status_handler(httpd_req_t *req)
+{
+    const esp_app_desc_t *app_desc = esp_ota_get_app_description();
+    const esp_partition_t *running_partition = esp_ota_get_running_partition();
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *version = cJSON_CreateString(app_desc->version);
+    cJSON *project_name = cJSON_CreateString(app_desc->project_name);
+    cJSON *time = cJSON_CreateString(app_desc->time);
+    cJSON *date = cJSON_CreateString(app_desc->date);
+    cJSON *partition = cJSON_CreateString(running_partition->label);
+    cJSON *ota_in_progress_json = cJSON_CreateBool(ota_in_progress);
+
+    cJSON_AddItemToObject(root, "version", version);
+    cJSON_AddItemToObject(root, "project_name", project_name);
+    cJSON_AddItemToObject(root, "time", time);
+    cJSON_AddItemToObject(root, "date", date);
+    cJSON_AddItemToObject(root, "partition", partition);
+    cJSON_AddItemToObject(root, "ota_in_progress", ota_in_progress_json);
+
+    if (ota_in_progress)
+    {
+        cJSON *progress = cJSON_CreateNumber(ota_progress);
+        cJSON *message = cJSON_CreateString(ota_message);
+        cJSON_AddItemToObject(root, "progress", progress);
+        cJSON_AddItemToObject(root, "message", message);
+    }
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(root);
+    free(json_str);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief OTA更新处理函数
+ * POST /update - 接收固件文件并执行更新
+ */
+static esp_err_t ota_update_handler(httpd_req_t *req)
+{
+    if (ota_in_progress)
+    {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "OTA update already in progress");
+        return ESP_OK;
+    }
+
+    // 查找OTA分区
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+    if (!update_partition)
+    {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Failed to find OTA partition");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Starting OTA update to partition: %s", update_partition->label);
+
+    // 初始化OTA句柄
+    esp_ota_handle_t ota_handle = {0};
+    esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA initialization failed");
+        return ESP_OK;
+    }
+
+    ota_in_progress = true;
+    ota_progress = 0;
+    strncpy(ota_message, "Receiving firmware...", sizeof(ota_message) - 1);
+
+    // 接收固件数据
+    int total_len = req->content_len;
+    int received_len = 0;
+    char *ota_buffer = (char *)malloc(4096);
+    if (!ota_buffer)
+    {
+        esp_ota_end(ota_handle);
+        ota_in_progress = false;
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Memory allocation failed");
+        return ESP_OK;
+    }
+
+    int remaining = total_len;
+    while (remaining > 0)
+    {
+        int recv_len = httpd_req_recv(req, ota_buffer, MIN(remaining, 4096));
+        if (recv_len < 0)
+        {
+            ESP_LOGE(TAG, "Error receiving data");
+            free(ota_buffer);
+            esp_ota_end(ota_handle);
+            ota_in_progress = false;
+            strncpy(ota_message, "Data receive error", sizeof(ota_message) - 1);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, "Error receiving data");
+            return ESP_OK;
+        }
+        else if (recv_len == 0)
+        {
+            // 连接关闭
+            break;
+        }
+
+        // 写入OTA分区
+        err = esp_ota_write(ota_handle, (const void *)ota_buffer, recv_len);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
+            free(ota_buffer);
+            esp_ota_end(ota_handle);
+            ota_in_progress = false;
+            strncpy(ota_message, "OTA write failed", sizeof(ota_message) - 1);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, "OTA write failed");
+            return ESP_OK;
+        }
+
+        received_len += recv_len;
+        remaining -= recv_len;
+        ota_progress = (received_len * 100) / total_len;
+
+        if (received_len % 10 == 0)
+        {
+            ESP_LOGI(TAG, "OTA progress: %d%%", ota_progress);
+        }
+    }
+
+    free(ota_buffer);
+
+    // 完成OTA更新
+    err = esp_ota_end(ota_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
+        ota_in_progress = false;
+        strncpy(ota_message, "OTA end failed", sizeof(ota_message) - 1);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA end failed");
+        return ESP_OK;
+    }
+
+    // 设置启动分区
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
+        ota_in_progress = false;
+        strncpy(ota_message, "Set boot partition failed", sizeof(ota_message) - 1);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Set boot partition failed");
+        return ESP_OK;
+    }
+
+    ota_progress = 100;
+    strncpy(ota_message, "OTA update completed successfully", sizeof(ota_message) - 1);
+
+    ESP_LOGI(TAG, "OTA update completed successfully. Rebooting...");
+
+    // 返回成功响应
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_sendstr(req, "OTA update completed successfully. Rebooting...");
+
+    // 延迟后重启
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    esp_restart();
 
     return ESP_OK;
 }
@@ -418,6 +622,24 @@ httpd_handle_t web_server_start(void)
         .handler = set_config_html_handler,
         .user_ctx = NULL};
 
+    httpd_uri_t ota_html_get = {
+        .uri = "/ota.html",
+        .method = HTTP_GET,
+        .handler = ota_html_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t ota_status_get = {
+        .uri = "/ota",
+        .method = HTTP_GET,
+        .handler = ota_status_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t ota_update_post = {
+        .uri = "/update",
+        .method = HTTP_POST,
+        .handler = ota_update_handler,
+        .user_ctx = NULL};
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK)
     {
         httpd_register_uri_handler(stream_httpd, &uri_get);
@@ -425,6 +647,9 @@ httpd_handle_t web_server_start(void)
         httpd_register_uri_handler(stream_httpd, &index_get);
         httpd_register_uri_handler(stream_httpd, &config_get);
         httpd_register_uri_handler(stream_httpd, &config_set);
+        httpd_register_uri_handler(stream_httpd, &ota_html_get);
+        httpd_register_uri_handler(stream_httpd, &ota_status_get);
+        httpd_register_uri_handler(stream_httpd, &ota_update_post);
 
         start_sustainTasks();
 

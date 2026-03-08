@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 CAM - OTA Update</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 25px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin: 0 0 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+            text-align: center;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .info-section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .info-section h2 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-size: 18px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 16px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+        .upload-section {
+            margin-bottom: 25px;
+            padding: 25px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .upload-section.dragover {
+            border-color: #3498db;
+            background-color: #ecf5fb;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-label {
+            display: inline-block;
+            padding: 15px 30px;
+            background-color: #3498db;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .file-label:hover {
+            background-color: #2980b9;
+            transform: translateY(-1px);
+        }
+        .file-name {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+        .button-row {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+        button {
+            padding: 12px 30px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        button:hover:not(:disabled) {
+            background-color: #2980b9;
+            transform: translateY(-1px);
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            color: #7f8c8d;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background-color: #95a5a6;
+        }
+        button.secondary:hover:not(:disabled) {
+            background-color: #7f8c8d;
+        }
+        .progress-section {
+            display: none;
+            margin-bottom: 25px;
+        }
+        .progress-section.active {
+            display: block;
+        }
+        .progress-bar-container {
+            height: 30px;
+            background-color: #ecf0f1;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            transition: width 0.3s ease;
+            border-radius: 15px;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: 600;
+            color: #2c3e50;
+            text-shadow: 0 0 2px white;
+        }
+        .status-section {
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+        .status-section.active {
+            display: block;
+        }
+        .status-section.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-section.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-section.info {
+            background-color: #cce5ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+        .warning {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 6px;
+            color: #856404;
+            font-size: 13px;
+        }
+        .warning-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to Control Panel</a>
+
+        <h1>System Update (OTA)</h1>
+
+        <!-- 设备信息 -->
+        <div class="info-section">
+            <h2>Device Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Firmware Version</span>
+                    <span class="info-value" id="version">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Project Name</span>
+                    <span class="info-value" id="project-name">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Current Partition</span>
+                    <span class="info-value" id="partition">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Build Date</span>
+                    <span class="info-value" id="build-date">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文件上传区域 -->
+        <div class="upload-section" id="upload-section">
+            <label class="file-label" for="firmware-file">
+                Select Firmware File (.bin)
+            </label>
+            <input type="file" id="firmware-file" accept=".bin">
+            <div class="file-name" id="file-name"></div>
+        </div>
+
+        <!-- 按钮区域 -->
+        <div class="button-row">
+            <button onclick="startOTA()" id="start-btn" disabled>Start Update</button>
+            <button onclick="cancelOTA()" id="cancel-btn" class="secondary" disabled>Cancel</button>
+        </div>
+
+        <!-- 进度条区域 -->
+        <div class="progress-section" id="progress-section">
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar"></div>
+                <span class="progress-text" id="progress-text">0%</span>
+            </div>
+        </div>
+
+        <!-- 状态信息 -->
+        <div class="status-section" id="status-section">
+            <span id="status-text"></span>
+        </div>
+
+        <!-- 警告信息 -->
+        <div class="warning">
+            <div class="warning-title">Warning:</div>
+            <ul>
+                <li>Do not power off the device during the update process</li>
+                <li>The device will automatically restart after the update</li>
+                <li>Make sure the firmware file is compatible with this device</li>
+                <li>Maximum firmware size: 4MB</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let xhr = null;
+        let isUploading = false;
+
+        // 加载OTA状态
+        function loadOTAStatus() {
+            fetch('/ota')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('version').textContent = data.version || 'Unknown';
+                    document.getElementById('project-name').textContent = data.project_name || 'Unknown';
+                    document.getElementById('partition').textContent = data.partition || 'Unknown';
+                    document.getElementById('build-date').textContent = data.date || 'Unknown';
+
+                    // 检查是否正在更新
+                    if (data.ota_in_progress) {
+                        showStatus('OTA update in progress: ' + data.progress + '%', 'info');
+                        document.getElementById('progress-section').classList.add('active');
+                        document.getElementById('progress-bar').style.width = data.progress + '%';
+                        document.getElementById('progress-text').textContent = data.progress + '%';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading OTA status:', error);
+                    showStatus('Failed to load device information', 'error');
+                });
+        }
+
+        // 文件选择事件
+        document.getElementById('firmware-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('file-name').textContent = 'Selected: ' + file.name + ' (' + formatFileSize(file.size) + ')';
+                document.getElementById('start-btn').disabled = false;
+
+                // 检查文件大小
+                if (file.size > 4 * 1024 * 1024) {
+                    showStatus('File too large. Maximum size is 4MB', 'error');
+                    document.getElementById('start-btn').disabled = true;
+                }
+            } else {
+                document.getElementById('file-name').textContent = '';
+                document.getElementById('start-btn').disabled = true;
+            }
+        });
+
+        // 开始OTA更新
+        function startOTA() {
+            const fileInput = document.getElementById('firmware-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showStatus('Please select a firmware file first', 'error');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to start the update? The device will restart after the update.')) {
+                return;
+            }
+
+            isUploading = true;
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // 禁用按钮
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('cancel-btn').disabled = false;
+            document.getElementById('upload-section').style.pointerEvents = 'none';
+            document.getElementById('upload-section').style.opacity = '0.5';
+
+            // 显示进度条
+            document.getElementById('progress-section').classList.add('active');
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0%';
+
+            showStatus('Starting update...', 'info');
+
+            // 创建XMLHttpRequest
+            xhr = new XMLHttpRequest();
+
+            // 进度更新
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    updateProgress(percent);
+                }
+            };
+
+            // 完成处理
+            xhr.onload = function() {
+                isUploading = false;
+                document.getElementById('cancel-btn').disabled = true;
+
+                if (xhr.status === 200) {
+                    showStatus('Update completed successfully! Device will restart...', 'success');
+                    updateProgress(100);
+
+                    // 3秒后刷新页面
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    showStatus('Update failed: ' + xhr.responseText, 'error');
+                    resetUI();
+                }
+            };
+
+            // 错误处理
+            xhr.onerror = function() {
+                isUploading = false;
+                showStatus('Network error. Please check your connection.', 'error');
+                resetUI();
+            };
+
+            // 中止处理
+            xhr.onabort = function() {
+                isUploading = false;
+                showStatus('Update cancelled', 'info');
+                resetUI();
+            };
+
+            xhr.open('POST', '/update');
+            xhr.send(formData);
+        }
+
+        // 取消OTA更新
+        function cancelOTA() {
+            if (xhr && isUploading) {
+                if (confirm('Are you sure you want to cancel the update?')) {
+                    xhr.abort();
+                }
+            }
+        }
+
+        // 更新进度条
+        function updateProgress(percent) {
+            document.getElementById('progress-bar').style.width = percent + '%';
+            document.getElementById('progress-text').textContent = percent + '%';
+
+            if (percent < 30) {
+                showStatus('Receiving firmware...', 'info');
+            } else if (percent < 70) {
+                showStatus('Writing firmware to flash...', 'info');
+            } else if (percent < 100) {
+                showStatus('Verifying firmware...', 'info');
+            }
+        }
+
+        // 显示状态信息
+        function showStatus(message, type) {
+            const statusSection = document.getElementById('status-section');
+            const statusText = document.getElementById('status-text');
+
+            statusSection.className = 'status-section active ' + type;
+            statusText.textContent = message;
+        }
+
+        // 重置UI
+        function resetUI() {
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('cancel-btn').disabled = true;
+            document.getElementById('upload-section').style.pointerEvents = 'auto';
+            document.getElementById('upload-section').style.opacity = '1';
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // 页面加载时获取OTA状态
+        window.addEventListener('load', function() {
+            loadOTAStatus();
+        });
+    </script>
+</body>
+</html>

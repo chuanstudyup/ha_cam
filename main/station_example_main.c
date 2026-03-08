@@ -328,11 +328,9 @@ void app_main(void)
     web_server_start();
 
     // start rtsp server
-    int width = 0, height = 0;
     char ip_str[16] = {0};
-    get_camera_frame_dimension(&width, &height);
     netLocalIP(ip_str, NULL, NULL);
-    RTSPServer *rtspServer = RTSPServer_Create(width, height);
+    RTSPServer *rtspServer = RTSPServer_Create();
     RTSPServer_Start(rtspServer, ip_str, 554);
 
     xTaskCreate(save_picture_to_sdcard, "save_picture_to_sdcard", 8192, (void *)&(int){360000}, 5, &save_picture_to_sdcardHandle);

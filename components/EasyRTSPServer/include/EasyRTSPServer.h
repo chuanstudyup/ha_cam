@@ -148,7 +148,7 @@ typedef struct _RTSPServer{
 
 
 /*****************  RTSPservr **********************/
-RTSPServer* RTSPServer_Create(int width, int height);
+RTSPServer* RTSPServer_Create();
 void RTSPServer_Destory(RTSPServer* rtspServer);
 bool RTSPServer_Start(RTSPServer* rtspServer,  char* serverip, int port);
 void RTSPServer_Stop(RTSPServer* rtspServer);

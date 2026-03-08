@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "vCenter.h"
+#include "Camera.h"
 
 #ifdef ENABL_AUDIO_STREAM
 #include "Mic.h"
@@ -929,7 +930,24 @@ bool RTSPServer_SetAuthAccount(RTSPServer *rtspServer, char *username, char *pwd
   }
 }
 
-RTSPServer *RTSPServer_Create(int width, int height)
+static void rtspUpdateFrameSize(RTSPServer *server)
+{
+  int width = 0;
+  int height = 0;
+
+  get_camera_frame_dimension(&width, &height);
+
+  if (width == server->streamInfo.width && height == server->streamInfo.height)
+  {
+    return; // no change
+  }
+
+  server->streamInfo.width = width;
+  server->streamInfo.height = height;
+  ESP_LOGI(TAG, "update frame size: %dx%d", width, height);
+}
+
+RTSPServer *RTSPServer_Create()
 {
   RTSPServer *server = (RTSPServer *)malloc(sizeof(RTSPServer));
   if (server == NULL)
@@ -943,8 +961,7 @@ RTSPServer *RTSPServer_Create(int width, int height)
   server->msecPerAudioFrame = 1000 / AUDIO_FRAME_FPS;
 
   snprintf(server->streamInfo.suffix, LEN_MAX_SUFFIX, "mjpeg/1");
-  server->streamInfo.width = width;
-  server->streamInfo.height = height;
+  rtspUpdateFrameSize(server);
 
   return server;
 }
@@ -1111,6 +1128,7 @@ static void rtspServerTask(void *arg)
       }
       else
       {
+        rtspUpdateFrameSize(server); // update frame size in case it changes during runtime
         ESP_LOGI(TAG, "Accepted client %d", i);
       }
     }

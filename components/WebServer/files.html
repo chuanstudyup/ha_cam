@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 CAM - File Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            padding: 15px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background-color: #2c3e50;
+            color: white;
+        }
+        .header h1 {
+            font-size: 20px;
+        }
+        .header a {
+            color: #3498db;
+            text-decoration: none;
+            padding: 8px 15px;
+            background-color: #34495e;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        .header a:hover {
+            background-color: #3498db;
+        }
+        .storage-info {
+            padding: 15px 20px;
+            background-color: #ecf0f1;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .storage-text {
+            font-size: 14px;
+            color: #2c3e50;
+        }
+        .storage-bar {
+            flex: 1;
+            min-width: 200px;
+            height: 20px;
+            background-color: #bdc3c7;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        .storage-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            transition: width 0.3s ease;
+        }
+        .storage-bar-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+            text-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        .toolbar {
+            padding: 15px 20px;
+            border-bottom: 1px solid #ecf0f1;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: #c0392b;
+        }
+        .btn-secondary {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .path-bar {
+            padding: 10px 20px;
+            background-color: #f9f9f9;
+            border-bottom: 1px solid #ecf0f1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .path-bar span {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        .path-bar .current-path {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        .file-list {
+            padding: 0;
+            margin: 0;
+            list-style: none;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid #ecf0f1;
+            transition: background-color 0.2s;
+        }
+        .file-item:hover {
+            background-color: #f8f9fa;
+        }
+        .file-item.header-row {
+            background-color: #ecf0f1;
+            font-weight: 600;
+            font-size: 13px;
+            color: #2c3e50;
+        }
+        .file-checkbox {
+            width: 30px;
+        }
+        .file-checkbox input {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .file-icon {
+            width: 40px;
+            font-size: 20px;
+        }
+        .file-name {
+            flex: 1;
+            word-break: break-all;
+        }
+        .file-name a {
+            color: #2c3e50;
+            text-decoration: none;
+        }
+        .file-name a:hover {
+            color: #3498db;
+        }
+        .file-size {
+            width: 100px;
+            text-align: right;
+            font-size: 13px;
+            color: #7f8c8d;
+        }
+        .file-date {
+            width: 140px;
+            text-align: right;
+            font-size: 13px;
+            color: #7f8c8d;
+        }
+        .file-actions {
+            width: 80px;
+            text-align: right;
+        }
+        .file-actions button {
+            padding: 4px 8px;
+            margin-left: 5px;
+            font-size: 12px;
+        }
+        .btn-download {
+            background-color: #27ae60;
+            color: white;
+        }
+        .btn-download:hover {
+            background-color: #229954;
+        }
+        .btn-delete {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .btn-delete:hover {
+            background-color: #c0392b;
+        }
+        .empty-message {
+            padding: 40px 20px;
+            text-align: center;
+            color: #7f8c8d;
+        }
+        .loading {
+            padding: 40px 20px;
+            text-align: center;
+            color: #7f8c8d;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active {
+            display: flex;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 25px;
+            border-radius: 8px;
+            min-width: 300px;
+            max-width: 400px;
+        }
+        .modal-title {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .btn-cancel {
+            background-color: #95a5a6;
+            color: white;
+        }
+        .status-message {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 4px;
+            color: white;
+            font-size: 14px;
+            display: none;
+            z-index: 2000;
+        }
+        .status-message.success {
+            background-color: #27ae60;
+            display: block;
+        }
+        .status-message.error {
+            background-color: #e74c3c;
+            display: block;
+        }
+        @media (max-width: 768px) {
+            .file-date, .file-size {
+                display: none;
+            }
+            .file-actions {
+                width: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>File Manager</h1>
+            <div>
+                <a href="/files.html">Files</a>
+                <a href="/ota.html">OTA</a>
+                <a href="/">Home</a>
+            </div>
+        </div>
+
+        <div class="storage-info">
+            <span class="storage-text" id="storage-text">Loading...</span>
+            <div class="storage-bar">
+                <div class="storage-bar-fill" id="storage-bar-fill" style="width: 0%"></div>
+                <span class="storage-bar-text" id="storage-bar-text">0%</span>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <button class="btn-primary" id="btn-delete-selected" onclick="deleteSelected()" disabled>Delete Selected</button>
+            <button class="btn-secondary" onclick="showMkdirModal()">Create Folder</button>
+            <button class="btn-secondary" onclick="refreshFiles()">Refresh</button>
+        </div>
+
+        <div class="path-bar">
+            <span>Path:</span>
+            <span class="current-path" id="current-path">/sdcard</span>
+        </div>
+
+        <div id="file-list-container">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div class="modal" id="mkdir-modal">
+        <div class="modal-content">
+            <div class="modal-title">Create New Folder</div>
+            <input type="text" class="modal-input" id="new-folder-name" placeholder="Folder name">
+            <div class="modal-buttons">
+                <button class="btn-cancel" onclick="hideMkdirModal()">Cancel</button>
+                <button class="btn-secondary" onclick="createFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Message -->
+    <div class="status-message" id="status-message"></div>
+
+    <script>
+        let currentPath = '/sdcard';
+        let selectedItems = new Set();
+
+        // Load storage info
+        function loadStorageInfo() {
+            fetch('/api/storage/info')
+                .then(response => response.json())
+                .then(data => {
+                    const usedPercent = data.used_percent || 0;
+                    document.getElementById('storage-bar-fill').style.width = usedPercent + '%';
+                    document.getElementById('storage-bar-text').textContent = usedPercent + '%';
+
+                    const freeGB = (data.free_kb / 1024 / 1024).toFixed(1);
+                    const totalGB = (data.total_kb / 1024 / 1024).toFixed(1);
+                    document.getElementById('storage-text').textContent = `${freeGB} GB free / ${totalGB} GB total`;
+                })
+                .catch(error => {
+                    console.error('Error loading storage info:', error);
+                    document.getElementById('storage-text').textContent = 'Error loading storage info';
+                });
+        }
+
+        // Load file list
+        function loadFileList(path) {
+            currentPath = path;
+            document.getElementById('current-path').textContent = path;
+            document.getElementById('file-list-container').innerHTML = '<div class="loading">Loading...</div>';
+
+            fetch('/api/files/list?path=' + encodeURIComponent(path))
+                .then(response => response.json())
+                .then(data => {
+                    renderFileList(data);
+                })
+                .catch(error => {
+                    console.error('Error loading file list:', error);
+                    document.getElementById('file-list-container').innerHTML = '<div class="empty-message">Error loading files</div>';
+                });
+        }
+
+        // Render file list
+        function renderFileList(data) {
+            const container = document.getElementById('file-list-container');
+            const items = data.items || [];
+
+            if (items.length === 0) {
+                container.innerHTML = '<div class="empty-message">This folder is empty</div>';
+                return;
+            }
+
+            let html = '<ul class="file-list">';
+            html += '<li class="file-item header-row">';
+            html += '<div class="file-checkbox"><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></div>';
+            html += '<div class="file-icon"></div>';
+            html += '<div class="file-name">Name</div>';
+            html += '<div class="file-size">Size</div>';
+            html += '<div class="file-date">Modified</div>';
+            html += '<div class="file-actions">Action</div>';
+            html += '</li>';
+
+            items.forEach(item => {
+                const isDir = item.type === 'dir';
+                const itemPath = item.path;
+                const icon = isDir ? '📁' : getFileIcon(item.name);
+
+                html += '<li class="file-item">';
+                html += '<div class="file-checkbox"><input type="checkbox" value="' + itemPath + '" onchange="toggleSelect(this)" ' + (selectedItems.has(itemPath) ? 'checked' : '') + '></div>';
+                html += '<div class="file-icon">' + icon + '</div>';
+                html += '<div class="file-name">';
+
+                if (isDir) {
+                    html += '<a href="#" onclick="loadFileList(\'' + itemPath + '\')">' + item.name + '</a>';
+                } else {
+                    html += item.name;
+                }
+                html += '</div>';
+                html += '<div class="file-size">' + formatSize(item.size) + '</div>';
+                html += '<div class="file-date">' + item.modified + '</div>';
+                html += '<div class="file-actions">';
+
+                if (!isDir) {
+                    html += '<button class="btn-download" onclick="downloadFile(\'' + itemPath + '\')" title="Download">⬇</button>';
+                }
+                html += '<button class="btn-delete" onclick="deleteFile(\'' + itemPath + '\')" title="Delete">🗑</button>';
+
+                html += '</div>';
+                html += '</li>';
+            });
+
+            html += '</ul>';
+            container.innerHTML = html;
+            updateDeleteButton();
+        }
+
+        // Get file icon based on extension
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️',
+                'avi': '🎬', 'mp4': '🎬', 'mov': '🎬', 'mkv': '🎬',
+                'mp3': '🎵', 'wav': '🎵', 'aac': '🎵',
+                'pdf': '📄', 'doc': '📄', 'docx': '📄', 'txt': '📄',
+                'zip': '📦', 'rar': '📦', '7z': '📦',
+                'bin': '💾', 'json': '📋'
+            };
+            return icons[ext] || '📄';
+        }
+
+        // Format file size
+        function formatSize(bytes) {
+            if (bytes === 0) return '-';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Navigate to parent directory
+        function navigateUp() {
+            if (currentPath === '/sdcard') return;
+            const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+            if (parentPath === '') parentPath = '/sdcard';
+            loadFileList(parentPath);
+        }
+
+        // Toggle select all
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('select-all');
+            const checkboxes = document.querySelectorAll('#file-list-container input[type="checkbox"]:not(#select-all)');
+
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+                if (selectAll.checked) {
+                    selectedItems.add(cb.value);
+                } else {
+                    selectedItems.delete(cb.value);
+                }
+            });
+
+            updateDeleteButton();
+        }
+
+        // Toggle select single item
+        function toggleSelect(checkbox) {
+            if (checkbox.checked) {
+                selectedItems.add(checkbox.value);
+            } else {
+                selectedItems.delete(checkbox.value);
+            }
+            updateDeleteButton();
+        }
+
+        // Update delete button state
+        function updateDeleteButton() {
+            const btn = document.getElementById('btn-delete-selected');
+            btn.disabled = selectedItems.size === 0;
+        }
+
+        // Delete selected files
+        function deleteSelected() {
+            if (selectedItems.size === 0) return;
+
+            const items = Array.from(selectedItems);
+            const confirmed = confirm('Are you sure you want to delete ' + items.length + ' item(s)?');
+            if (!confirmed) return;
+
+            fetch('/api/files/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({paths: items})
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message, data.success ? 'success' : 'error');
+                selectedItems.clear();
+                loadFileList(currentPath);
+                loadStorageInfo();
+            })
+            .catch(error => {
+                showStatus('Delete failed: ' + error, 'error');
+            });
+        }
+
+        // Delete single file
+        function deleteFile(path) {
+            if (!confirm('Are you sure you want to delete "' + path.split('/').pop() + '"?')) return;
+
+            fetch('/api/files/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({paths: [path]})
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message, data.success ? 'success' : 'error');
+                loadFileList(currentPath);
+                loadStorageInfo();
+            })
+            .catch(error => {
+                showStatus('Delete failed: ' + error, 'error');
+            });
+        }
+
+        // Download file
+        function downloadFile(path) {
+            window.location.href = '/api/files/download?path=' + encodeURIComponent(path);
+        }
+
+        // Show create folder modal
+        function showMkdirModal() {
+            document.getElementById('mkdir-modal').classList.add('active');
+            document.getElementById('new-folder-name').value = '';
+            document.getElementById('new-folder-name').focus();
+        }
+
+        // Hide create folder modal
+        function hideMkdirModal() {
+            document.getElementById('mkdir-modal').classList.remove('active');
+        }
+
+        // Create folder
+        function createFolder() {
+            const folderName = document.getElementById('new-folder-name').value.trim();
+            if (!folderName) {
+                showStatus('Please enter a folder name', 'error');
+                return;
+            }
+
+            // Validate folder name
+            if (folderName.includes('/') || folderName.includes('\\')) {
+                showStatus('Folder name cannot contain / or \\', 'error');
+                return;
+            }
+
+            const newPath = currentPath === '/sdcard' ? '/sdcard/' + folderName : currentPath + '/' + folderName;
+
+            fetch('/api/files/mkdir', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: newPath})
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    hideMkdirModal();
+                    loadFileList(currentPath);
+                }
+            })
+            .catch(error => {
+                showStatus('Create folder failed: ' + error, 'error');
+            });
+        }
+
+        // Refresh files
+        function refreshFiles() {
+            loadFileList(currentPath);
+            loadStorageInfo();
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            const el = document.getElementById('status-message');
+            el.textContent = message;
+            el.className = 'status-message ' + type;
+            setTimeout(() => {
+                el.className = 'status-message';
+            }, 3000);
+        }
+
+        // Handle path from URL
+        function handlePathFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const path = urlParams.get('path');
+            if (path) {
+                return decodeURIComponent(path);
+            }
+            return '/sdcard';
+        }
+
+        // Initialize
+        window.addEventListener('load', function() {
+            loadStorageInfo();
+            loadFileList(handlePathFromUrl());
+        });
+    </script>
+</body>
+</html>

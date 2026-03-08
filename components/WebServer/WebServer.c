@@ -7,6 +7,11 @@
  * - Camera configuration
  */
 #include <string.h>
+#include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -20,8 +25,11 @@
 #include "esp_system.h"
 #include "freertos/event_groups.h"
 
+
 #include "Camera.h"
 #include "vCenter.h"
+#include "utilsFS.h"
+#include "storage.h"
 #include "WebServer.h"
 
 static const char *TAG = "WebServer";
@@ -504,6 +512,476 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+
+/**
+ * @brief 文件管理页面处理函数
+ */
+static esp_err_t files_html_handler(httpd_req_t *req)
+{
+    extern const char files_html_start[] asm("_binary_files_html_start");
+    extern const char files_html_end[] asm("_binary_files_html_end");
+    size_t files_html_len = files_html_end - files_html_start;
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, files_html_start, files_html_len);
+    return ESP_OK;
+}
+
+/**
+ * @brief 验证路径是否安全（只允许访问/sdcard目录）
+ */
+static bool is_path_safe(const char *path)
+{
+    // 只允许访问/sdcard开头的路径
+    if (strncmp(path, "/sdcard", 7) != 0)
+    {
+        return false;
+    }
+    // 不允许访问系统目录
+    if (strstr(path, "/sdcard/System") != NULL || strstr(path, "/sdcard/SYSTEM") != NULL)
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 获取文件修改时间
+ */
+static void get_file_time(const char *path, char *time_str, size_t len)
+{
+    struct stat st;
+    if (stat(path, &st) == 0)
+    {
+        struct tm *tm = localtime(&st.st_mtime);
+        strftime(time_str, len, "%Y-%m-%d %H:%M", tm);
+    }
+    else
+    {
+        snprintf(time_str, len, "Unknown");
+    }
+}
+
+/**
+ * @brief 文件列表API处理函数
+ * GET /api/files/list?path=/sdcard/xxx
+ */
+static esp_err_t file_list_handler(httpd_req_t *req)
+{
+    char path[256] = {0};
+
+    // 获取路径参数
+    if (httpd_req_get_url_query_str(req, path, sizeof(path)) != ESP_OK)
+    {
+        strcpy(path, "/sdcard");
+    }
+    else
+    {
+        char path_param[256] = {0};
+        if (httpd_query_key_value(path, "path", path_param, sizeof(path_param)) == ESP_OK)
+        {
+            strncpy(path, path_param, sizeof(path) - 1);
+        }
+        else
+        {
+            strcpy(path, "/sdcard");
+        }
+    }
+
+    // 验证路径安全性
+    if (!is_path_safe(path))
+    {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_sendstr(req, "Access denied");
+        return ESP_OK;
+    }
+
+    // 打开目录
+    DIR *dir = opendir(path);
+    if (!dir)
+    {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_sendstr(req, "Directory not found");
+        return ESP_OK;
+    }
+
+    // 构建父路径
+    char parent_path[256] = {0};
+    strncpy(parent_path, path, sizeof(parent_path) - 1);
+    char *last_slash = strrchr(parent_path, '/');
+    if (last_slash && last_slash != parent_path)
+    {
+        *last_slash = '\0';
+        if (strlen(parent_path) == 7)  // /sdcard
+        {
+            strcpy(parent_path, "/sdcard");
+        }
+    }
+    else
+    {
+        strcpy(parent_path, "/sdcard");
+    }
+
+    // 构建JSON
+    cJSON *root = cJSON_CreateObject();
+    cJSON *items = cJSON_CreateArray();
+
+    struct dirent *entry;
+    struct stat st;
+    char full_path[512];
+
+    // 添加父目录
+    if (strcmp(path, "/sdcard") != 0)
+    {
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddStringToObject(item, "name", "..");
+        cJSON_AddStringToObject(item, "type", "dir");
+        cJSON_AddStringToObject(item, "path", parent_path);
+        cJSON_AddNumberToObject(item, "size", 0);
+        cJSON_AddStringToObject(item, "modified", "");
+        cJSON_AddItemToArray(items, item);
+    }
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        // 跳过隐藏文件和系统目录
+        if (entry->d_name[0] == '.')
+            continue;
+        if (strcmp(entry->d_name, "System") == 0 || strcmp(entry->d_name, "SYSTEM") == 0)
+            continue;
+        if (strcmp(entry->d_name, "data") == 0)
+            continue;
+
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+
+        if (stat(full_path, &st) != 0)
+            continue;
+
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddStringToObject(item, "name", entry->d_name);
+        cJSON_AddStringToObject(item, "type", S_ISDIR(st.st_mode) ? "dir" : "file");
+        cJSON_AddStringToObject(item, "path", full_path);
+        cJSON_AddNumberToObject(item, "size", st.st_size);
+
+        char time_str[64];
+        get_file_time(full_path, time_str, sizeof(time_str));
+        cJSON_AddStringToObject(item, "modified", time_str);
+
+        cJSON_AddItemToArray(items, item);
+    }
+
+    closedir(dir);
+
+    cJSON_AddStringToObject(root, "path", path);
+    cJSON_AddStringToObject(root, "parent", parent_path);
+    cJSON_AddItemToObject(root, "items", items);
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(root);
+    free(json_str);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 文件下载处理函数
+ * GET /api/files/download?path=/sdcard/xxx/xxx.jpg
+ */
+static esp_err_t file_download_handler(httpd_req_t *req)
+{
+    char path[512] = {0};
+
+    // 获取路径参数
+    if (httpd_req_get_url_query_str(req, path, sizeof(path)) != ESP_OK)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Missing path parameter");
+        return ESP_OK;
+    }
+
+    char path_param[128] = {0};
+    if (httpd_query_key_value(path, "path", path_param, sizeof(path_param)) != ESP_OK)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Missing path parameter");
+        return ESP_OK;
+    }
+
+    // 验证路径安全性
+    if (!is_path_safe(path_param))
+    {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_sendstr(req, "Access denied");
+        return ESP_OK;
+    }
+
+    // 检查文件是否存在
+    struct stat st;
+    if (stat(path_param, &st) != 0 || !S_ISREG(st.st_mode))
+    {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_sendstr(req, "File not found");
+        return ESP_OK;
+    }
+
+    // 打开文件
+    FILE *f = fopen(path_param, "rb");
+    if (!f)
+    {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Failed to open file");
+        return ESP_OK;
+    }
+
+    // 获取文件扩展名来确定content-type
+    const char *filename = strrchr(path_param, '/');
+    if (filename) filename++;
+    else filename = path_param;
+
+    const char *ext = strrchr(filename, '.');
+    if (ext) ext++;
+
+    // 设置Content-Type
+    char content_type[64] = "application/octet-stream";
+    if (ext)
+    {
+        if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0)
+            strcpy(content_type, "image/jpeg");
+        else if (strcasecmp(ext, "png") == 0)
+            strcpy(content_type, "image/png");
+        else if (strcasecmp(ext, "gif") == 0)
+            strcpy(content_type, "image/gif");
+        else if (strcasecmp(ext, "bmp") == 0)
+            strcpy(content_type, "image/bmp");
+        else if (strcasecmp(ext, "avi") == 0)
+            strcpy(content_type, "video/x-msvideo");
+        else if (strcasecmp(ext, "mp4") == 0)
+            strcpy(content_type, "video/mp4");
+        else if (strcasecmp(ext, "txt") == 0)
+            strcpy(content_type, "text/plain");
+        else if (strcasecmp(ext, "json") == 0)
+            strcpy(content_type, "application/json");
+        else if (strcasecmp(ext, "html") == 0 || strcasecmp(ext, "htm") == 0)
+            strcpy(content_type, "text/html");
+    }
+
+    // 设置响应头
+    char header[256] = {0};
+    snprintf(header, sizeof(header), "attachment; filename=\"%s\"", filename);
+    httpd_resp_set_hdr(req, "Content-Disposition", header);
+    httpd_resp_set_type(req, content_type);
+
+    // 发送文件内容
+    char *buffer = (char *)malloc(4096);
+    if (!buffer)
+    {
+        fclose(f);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "Memory allocation failed");
+        return ESP_OK;
+    }
+
+    size_t read_len;
+    while ((read_len = fread(buffer, 1, 4096, f)) > 0)
+    {
+        if (httpd_resp_send_chunk(req, buffer, read_len) != ESP_OK)
+            break;
+    }
+
+    free(buffer);
+    fclose(f);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 文件删除处理函数
+ * POST /api/files/delete
+ * Body: {"paths": ["/sdcard/xxx/1.jpg", "/sdcard/xxx/folder"]}
+ */
+static esp_err_t file_delete_handler(httpd_req_t *req)
+{
+    char buf[1024];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Failed to read request body");
+        return ESP_OK;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Invalid JSON");
+        return ESP_OK;
+    }
+
+    cJSON *paths = cJSON_GetObjectItem(root, "paths");
+    if (!paths || !cJSON_IsArray(paths))
+    {
+        cJSON_Delete(root);
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Missing paths array");
+        return ESP_OK;
+    }
+
+    int deleted_count = 0;
+    int failed_count = 0;
+
+    cJSON *path_item;
+    cJSON_ArrayForEach(path_item, paths)
+    {
+        const char *path = cJSON_GetStringValue(path_item);
+        if (!path) continue;
+
+        // 验证路径安全性
+        if (!is_path_safe(path))
+        {
+            failed_count++;
+            continue;
+        }
+
+        // 检查是否是系统目录
+        if (strcmp(path, "/sdcard") == 0 || strcmp(path, "/sdcard/System") == 0 || strcmp(path, "/sdcard/SYSTEM") == 0)
+        {
+            failed_count++;
+            continue;
+        }
+
+        // 调用 deleteFolderOrFile 进行删除
+        // 注意：deleteFolderOrFile 内部会使用 setFolderName 处理路径
+        deleteFolderOrFile(path);
+        deleted_count++;
+    }
+
+    cJSON_Delete(root);
+
+    // 构建响应
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddBoolToObject(response, "success", failed_count == 0);
+    char message[128];
+    snprintf(message, sizeof(message), "Deleted %d item(s)", deleted_count);
+    if (failed_count > 0)
+    {
+        snprintf(message, sizeof(message), "Deleted %d item(s), failed %d", deleted_count, failed_count);
+    }
+    cJSON_AddStringToObject(response, "message", message);
+
+    char *json_str = cJSON_Print(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(response);
+    free(json_str);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 创建文件夹处理函数
+ * POST /api/files/mkdir
+ * Body: {"path": "/sdcard/xxx/newfolder"}
+ */
+static esp_err_t file_mkdir_handler(httpd_req_t *req)
+{
+    char buf[512];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Failed to read request body");
+        return ESP_OK;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root)
+    {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Invalid JSON");
+        return ESP_OK;
+    }
+
+    cJSON *path_item = cJSON_GetObjectItem(root, "path");
+    if (!path_item || !cJSON_IsString(path_item))
+    {
+        cJSON_Delete(root);
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "Missing path");
+        return ESP_OK;
+    }
+
+    const char *path = cJSON_GetStringValue(path_item);
+    cJSON_Delete(root);
+
+    // 验证路径安全性
+    if (!is_path_safe(path))
+    {
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_sendstr(req, "Access denied");
+        return ESP_OK;
+    }
+
+    // 创建目录
+    int result = mkdir(path, 0777);
+
+    cJSON *response = cJSON_CreateObject();
+    if (result == 0 || errno == EEXIST)
+    {
+        cJSON_AddBoolToObject(response, "success", true);
+        cJSON_AddStringToObject(response, "message", "Folder created successfully");
+        ESP_LOGI(TAG, "Created folder: %s", path);
+    }
+    else
+    {
+        cJSON_AddBoolToObject(response, "success", false);
+        cJSON_AddStringToObject(response, "message", "Failed to create folder");
+        ESP_LOGE(TAG, "Failed to create folder: %s", path);
+    }
+
+    char *json_str = cJSON_Print(response);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(response);
+    free(json_str);
+
+    return ESP_OK;
+}
+
+/**
+ * @brief 获取存储空间信息
+ * GET /api/storage/info
+ */
+static esp_err_t storage_info_handler(httpd_req_t *req)
+{
+    uint32_t total_kb = getSDTotalSpace();
+    uint32_t free_kb = getSDFreeSpace();
+    uint32_t used_kb = total_kb - free_kb;
+    uint32_t used_percent = (total_kb > 0) ? (used_kb * 100 / total_kb) : 0;
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "total_kb", total_kb);
+    cJSON_AddNumberToObject(root, "free_kb", free_kb);
+    cJSON_AddNumberToObject(root, "used_kb", used_kb);
+    cJSON_AddNumberToObject(root, "used_percent", used_percent);
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(root);
+    free(json_str);
+
+    return ESP_OK;
+}
+
 /**
  * @brief HTTP通用处理函数
  * 负责分发请求到对应的sustain任务
@@ -640,6 +1118,42 @@ httpd_handle_t web_server_start(void)
         .handler = ota_update_handler,
         .user_ctx = NULL};
 
+    httpd_uri_t files_html_get = {
+        .uri = "/files.html",
+        .method = HTTP_GET,
+        .handler = files_html_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t api_files_list = {
+        .uri = "/api/files/list",
+        .method = HTTP_GET,
+        .handler = file_list_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t api_files_download = {
+        .uri = "/api/files/download",
+        .method = HTTP_GET,
+        .handler = file_download_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t api_files_delete = {
+        .uri = "/api/files/delete",
+        .method = HTTP_POST,
+        .handler = file_delete_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t api_files_mkdir = {
+        .uri = "/api/files/mkdir",
+        .method = HTTP_POST,
+        .handler = file_mkdir_handler,
+        .user_ctx = NULL};
+
+    httpd_uri_t api_storage_info = {
+        .uri = "/api/storage/info",
+        .method = HTTP_GET,
+        .handler = storage_info_handler,
+        .user_ctx = NULL};
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK)
     {
         httpd_register_uri_handler(stream_httpd, &uri_get);
@@ -650,6 +1164,12 @@ httpd_handle_t web_server_start(void)
         httpd_register_uri_handler(stream_httpd, &ota_html_get);
         httpd_register_uri_handler(stream_httpd, &ota_status_get);
         httpd_register_uri_handler(stream_httpd, &ota_update_post);
+        httpd_register_uri_handler(stream_httpd, &files_html_get);
+        httpd_register_uri_handler(stream_httpd, &api_files_list);
+        httpd_register_uri_handler(stream_httpd, &api_files_download);
+        httpd_register_uri_handler(stream_httpd, &api_files_delete);
+        httpd_register_uri_handler(stream_httpd, &api_files_mkdir);
+        httpd_register_uri_handler(stream_httpd, &api_storage_info);
 
         start_sustainTasks();
 

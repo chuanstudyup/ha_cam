@@ -19,6 +19,8 @@ typedef struct _video_node
 
 bool init_video_center(void);
 void deinit_video_center(void);
+void pause_video_center(void);
+void resume_video_center(void);
 
 bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, uint8_t *data, size_t size);
 video_node *get_video_frame(unsigned int timestamp);

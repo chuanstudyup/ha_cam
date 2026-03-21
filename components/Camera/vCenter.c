@@ -68,6 +68,22 @@ bool init_video_center(void)
     return true;
 }
 
+void pause_video_center(void)
+{
+    if (l_v_center.task_handle)
+    {
+        vTaskSuspend(l_v_center.task_handle);
+    }
+}
+
+void resume_video_center(void)
+{
+    if (l_v_center.task_handle)
+    {
+        vTaskResume(l_v_center.task_handle);
+    }
+}
+
 void deinit_video_center(void)
 {
     struct list_head *pos, *n;

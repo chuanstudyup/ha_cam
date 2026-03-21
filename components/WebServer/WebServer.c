@@ -25,12 +25,12 @@
 #include "esp_system.h"
 #include "freertos/event_groups.h"
 
-
 #include "Camera.h"
 #include "vCenter.h"
 #include "utilsFS.h"
 #include "storage.h"
 #include "WebServer.h"
+#include "Utils.h"
 
 static const char *TAG = "WebServer";
 
@@ -408,6 +408,10 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    // 停止其他任务
+    pause_video_center();
+
+    // 此后 无论成功失败都重启
     ota_in_progress = true;
     ota_progress = 0;
     strncpy(ota_message, "Receiving firmware...", sizeof(ota_message) - 1);
@@ -422,7 +426,8 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
         ota_in_progress = false;
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "Memory allocation failed");
-        return ESP_OK;
+        
+        goto restart;
     }
 
     int remaining = total_len;
@@ -438,7 +443,7 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
             strncpy(ota_message, "Data receive error", sizeof(ota_message) - 1);
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_sendstr(req, "Error receiving data");
-            return ESP_OK;
+            goto restart;
         }
         else if (recv_len == 0)
         {
@@ -457,7 +462,7 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
             strncpy(ota_message, "OTA write failed", sizeof(ota_message) - 1);
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_sendstr(req, "OTA write failed");
-            return ESP_OK;
+            goto restart;
         }
 
         received_len += recv_len;
@@ -481,7 +486,7 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
         strncpy(ota_message, "OTA end failed", sizeof(ota_message) - 1);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "OTA end failed");
-        return ESP_OK;
+        goto restart;
     }
 
     // 设置启动分区
@@ -493,7 +498,7 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
         strncpy(ota_message, "Set boot partition failed", sizeof(ota_message) - 1);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "Set boot partition failed");
-        return ESP_OK;
+        goto restart;
     }
 
     ota_progress = 100;
@@ -505,13 +510,13 @@ static esp_err_t ota_update_handler(httpd_req_t *req)
     httpd_resp_set_status(req, "200 OK");
     httpd_resp_sendstr(req, "OTA update completed successfully. Rebooting...");
 
-    // 延迟后重启
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+restart:
+    // 无论成功失败，都延迟后重启
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
     esp_restart();
 
     return ESP_OK;
 }
-
 
 /**
  * @brief 文件管理页面处理函数
@@ -546,6 +551,38 @@ static bool is_path_safe(const char *path)
 }
 
 /**
+ * @brief URL解码函数
+ */
+static void url_decode(char *str)
+{
+    char *src = str;
+    char *dst = str;
+    while (*src)
+    {
+        if (*src == '%' && *(src + 1) && *(src + 2))
+        {
+            // URL编码: %XX
+            char hex[3] = {*(src + 1), *(src + 2), 0};
+            *dst = (char)strtol(hex, NULL, 16);
+            src += 3;
+        }
+        else if (*src == '+')
+        {
+            // URL编码空格
+            *dst = ' ';
+            src++;
+        }
+        else
+        {
+            *dst = *src;
+            src++;
+        }
+        dst++;
+    }
+    *dst = '\0';
+}
+
+/**
  * @brief 获取文件修改时间
  */
 static void get_file_time(const char *path, char *time_str, size_t len)
@@ -569,6 +606,8 @@ static void get_file_time(const char *path, char *time_str, size_t len)
 static esp_err_t file_list_handler(httpd_req_t *req)
 {
     char path[256] = {0};
+    char temp_path[300] = {0};
+    char path_param[256] = {0};
 
     // 获取路径参数
     if (httpd_req_get_url_query_str(req, path, sizeof(path)) != ESP_OK)
@@ -577,15 +616,23 @@ static esp_err_t file_list_handler(httpd_req_t *req)
     }
     else
     {
-        char path_param[256] = {0};
         if (httpd_query_key_value(path, "path", path_param, sizeof(path_param)) == ESP_OK)
         {
+            // URL解码
+            url_decode(path_param);
             strncpy(path, path_param, sizeof(path) - 1);
         }
         else
         {
             strcpy(path, "/sdcard");
         }
+    }
+
+    // 如果路径不以 /sdcard 开头，添加前缀
+    if (strncmp(path, "/sdcard", 7) != 0)
+    {
+        snprintf(temp_path, sizeof(temp_path), "/sdcard%s", path);
+        strncpy(path, temp_path, sizeof(path) - 1);
     }
 
     // 验证路径安全性
@@ -595,6 +642,8 @@ static esp_err_t file_list_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "Access denied");
         return ESP_OK;
     }
+
+    ESP_LOGI(TAG, "Listing files in: %s", path);
 
     // 打开目录
     DIR *dir = opendir(path);
@@ -612,7 +661,7 @@ static esp_err_t file_list_handler(httpd_req_t *req)
     if (last_slash && last_slash != parent_path)
     {
         *last_slash = '\0';
-        if (strlen(parent_path) == 7)  // /sdcard
+        if (strlen(parent_path) == 7) // /sdcard
         {
             strcpy(parent_path, "/sdcard");
         }
@@ -668,6 +717,8 @@ static esp_err_t file_list_handler(httpd_req_t *req)
         cJSON_AddStringToObject(item, "modified", time_str);
 
         cJSON_AddItemToArray(items, item);
+
+        // ESP_LOGI(TAG, "Found %s: %s (%s) size: %u modified: %s", S_ISDIR(st.st_mode) ? "dir" : "file", entry->d_name, full_path, (uint32_t)st.st_size, time_str);
     }
 
     closedir(dir);
@@ -693,6 +744,8 @@ static esp_err_t file_list_handler(httpd_req_t *req)
 static esp_err_t file_download_handler(httpd_req_t *req)
 {
     char path[512] = {0};
+    char path_param[256] = {0};
+    char temp_path[128] = {0};
 
     // 获取路径参数
     if (httpd_req_get_url_query_str(req, path, sizeof(path)) != ESP_OK)
@@ -702,12 +755,24 @@ static esp_err_t file_download_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    char path_param[128] = {0};
-    if (httpd_query_key_value(path, "path", path_param, sizeof(path_param)) != ESP_OK)
+    if (httpd_query_key_value(path, "path", temp_path, sizeof(temp_path)) != ESP_OK)
     {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req, "Missing path parameter");
         return ESP_OK;
+    }
+
+    // URL解码
+    url_decode(temp_path);
+
+    // 如果路径不以 /sdcard 开头，添加前缀
+    if (strncmp(temp_path, "/sdcard", 7) != 0)
+    {
+        snprintf(path_param, sizeof(path_param), "/sdcard%s", temp_path);
+    }
+    else
+    {
+        strncpy(path_param, temp_path, sizeof(path_param) - 1);
     }
 
     // 验证路径安全性
@@ -719,82 +784,17 @@ static esp_err_t file_download_handler(httpd_req_t *req)
     }
 
     // 检查文件是否存在
-    struct stat st;
-    if (stat(path_param, &st) != 0 || !S_ISREG(st.st_mode))
+    FILE *df = fopen(path_param, "rb");
+    if (!df)
     {
+        ESP_LOGW(TAG, "File does not exist or cannot be opened: %s", path_param);
         httpd_resp_set_status(req, "404 Not Found");
         httpd_resp_sendstr(req, "File not found");
         return ESP_OK;
     }
+    ESP_LOGI(TAG, "Downloading file: %s", path_param);
 
-    // 打开文件
-    FILE *f = fopen(path_param, "rb");
-    if (!f)
-    {
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "Failed to open file");
-        return ESP_OK;
-    }
-
-    // 获取文件扩展名来确定content-type
-    const char *filename = strrchr(path_param, '/');
-    if (filename) filename++;
-    else filename = path_param;
-
-    const char *ext = strrchr(filename, '.');
-    if (ext) ext++;
-
-    // 设置Content-Type
-    char content_type[64] = "application/octet-stream";
-    if (ext)
-    {
-        if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0)
-            strcpy(content_type, "image/jpeg");
-        else if (strcasecmp(ext, "png") == 0)
-            strcpy(content_type, "image/png");
-        else if (strcasecmp(ext, "gif") == 0)
-            strcpy(content_type, "image/gif");
-        else if (strcasecmp(ext, "bmp") == 0)
-            strcpy(content_type, "image/bmp");
-        else if (strcasecmp(ext, "avi") == 0)
-            strcpy(content_type, "video/x-msvideo");
-        else if (strcasecmp(ext, "mp4") == 0)
-            strcpy(content_type, "video/mp4");
-        else if (strcasecmp(ext, "txt") == 0)
-            strcpy(content_type, "text/plain");
-        else if (strcasecmp(ext, "json") == 0)
-            strcpy(content_type, "application/json");
-        else if (strcasecmp(ext, "html") == 0 || strcasecmp(ext, "htm") == 0)
-            strcpy(content_type, "text/html");
-    }
-
-    // 设置响应头
-    char header[256] = {0};
-    snprintf(header, sizeof(header), "attachment; filename=\"%s\"", filename);
-    httpd_resp_set_hdr(req, "Content-Disposition", header);
-    httpd_resp_set_type(req, content_type);
-
-    // 发送文件内容
-    char *buffer = (char *)malloc(4096);
-    if (!buffer)
-    {
-        fclose(f);
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "Memory allocation failed");
-        return ESP_OK;
-    }
-
-    size_t read_len;
-    while ((read_len = fread(buffer, 1, 4096, f)) > 0)
-    {
-        if (httpd_resp_send_chunk(req, buffer, read_len) != ESP_OK)
-            break;
-    }
-
-    free(buffer);
-    fclose(f);
-
-    return ESP_OK;
+    return downloadFile(path_param, df, req);
 }
 
 /**
@@ -838,17 +838,29 @@ static esp_err_t file_delete_handler(httpd_req_t *req)
     cJSON_ArrayForEach(path_item, paths)
     {
         const char *path = cJSON_GetStringValue(path_item);
-        if (!path) continue;
+        if (!path)
+            continue;
+
+        // 如果路径不以 /sdcard 开头，添加前缀
+        char full_path[256];
+        if (strncmp(path, "/sdcard", 7) != 0)
+        {
+            snprintf(full_path, sizeof(full_path), "/sdcard%s", path);
+        }
+        else
+        {
+            strncpy(full_path, path, sizeof(full_path) - 1);
+        }
 
         // 验证路径安全性
-        if (!is_path_safe(path))
+        if (!is_path_safe(full_path))
         {
             failed_count++;
             continue;
         }
 
         // 检查是否是系统目录
-        if (strcmp(path, "/sdcard") == 0 || strcmp(path, "/sdcard/System") == 0 || strcmp(path, "/sdcard/SYSTEM") == 0)
+        if (strcmp(full_path, "/sdcard") == 0 || strcmp(full_path, "/sdcard/System") == 0 || strcmp(full_path, "/sdcard/SYSTEM") == 0)
         {
             failed_count++;
             continue;
@@ -856,7 +868,7 @@ static esp_err_t file_delete_handler(httpd_req_t *req)
 
         // 调用 deleteFolderOrFile 进行删除
         // 注意：deleteFolderOrFile 内部会使用 setFolderName 处理路径
-        deleteFolderOrFile(path);
+        deleteFolderOrFile(full_path);
         deleted_count++;
     }
 
@@ -920,8 +932,19 @@ static esp_err_t file_mkdir_handler(httpd_req_t *req)
     const char *path = cJSON_GetStringValue(path_item);
     cJSON_Delete(root);
 
+    // 如果路径不以 /sdcard 开头，添加前缀
+    char full_path[256];
+    if (strncmp(path, "/sdcard", 7) != 0)
+    {
+        snprintf(full_path, sizeof(full_path), "/sdcard%s", path);
+    }
+    else
+    {
+        strncpy(full_path, path, sizeof(full_path) - 1);
+    }
+
     // 验证路径安全性
-    if (!is_path_safe(path))
+    if (!is_path_safe(full_path))
     {
         httpd_resp_set_status(req, "403 Forbidden");
         httpd_resp_sendstr(req, "Access denied");
@@ -929,20 +952,20 @@ static esp_err_t file_mkdir_handler(httpd_req_t *req)
     }
 
     // 创建目录
-    int result = mkdir(path, 0777);
+    int result = mkdir(full_path, 0777);
 
     cJSON *response = cJSON_CreateObject();
     if (result == 0 || errno == EEXIST)
     {
         cJSON_AddBoolToObject(response, "success", true);
         cJSON_AddStringToObject(response, "message", "Folder created successfully");
-        ESP_LOGI(TAG, "Created folder: %s", path);
+        ESP_LOGI(TAG, "Created folder: %s", full_path);
     }
     else
     {
         cJSON_AddBoolToObject(response, "success", false);
         cJSON_AddStringToObject(response, "message", "Failed to create folder");
-        ESP_LOGE(TAG, "Failed to create folder: %s", path);
+        ESP_LOGE(TAG, "Failed to create folder: %s", full_path);
     }
 
     char *json_str = cJSON_Print(response);
@@ -1069,6 +1092,8 @@ httpd_handle_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_handle_t stream_httpd = NULL;
+    config.max_uri_handlers = 16; // 增加URI处理器数量以支持更多功能
+    config.stack_size = 8192;     // 增加堆栈大小以处理更复杂的请求
 
     httpd_uri_t uri_get = {
         .uri = "/stream",
@@ -1161,9 +1186,11 @@ httpd_handle_t web_server_start(void)
         httpd_register_uri_handler(stream_httpd, &index_get);
         httpd_register_uri_handler(stream_httpd, &config_get);
         httpd_register_uri_handler(stream_httpd, &config_set);
+
         httpd_register_uri_handler(stream_httpd, &ota_html_get);
         httpd_register_uri_handler(stream_httpd, &ota_status_get);
         httpd_register_uri_handler(stream_httpd, &ota_update_post);
+
         httpd_register_uri_handler(stream_httpd, &files_html_get);
         httpd_register_uri_handler(stream_httpd, &api_files_list);
         httpd_register_uri_handler(stream_httpd, &api_files_download);

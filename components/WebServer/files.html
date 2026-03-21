@@ -350,7 +350,14 @@
         // Load storage info
         function loadStorageInfo() {
             fetch('/api/storage/info')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error(text || 'Server error: ' + response.status);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     const usedPercent = data.used_percent || 0;
                     document.getElementById('storage-bar-fill').style.width = usedPercent + '%';
@@ -362,7 +369,7 @@
                 })
                 .catch(error => {
                     console.error('Error loading storage info:', error);
-                    document.getElementById('storage-text').textContent = 'Error loading storage info';
+                    document.getElementById('storage-text').textContent = 'Error: ' + error.message;
                 });
         }
 
@@ -372,14 +379,21 @@
             document.getElementById('current-path').textContent = path;
             document.getElementById('file-list-container').innerHTML = '<div class="loading">Loading...</div>';
 
-            fetch('/api/files/list?path=' + encodeURIComponent(path))
-                .then(response => response.json())
+            fetch('/api/files/list?path=' + path)
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error(text || 'Server error: ' + response.status);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     renderFileList(data);
                 })
                 .catch(error => {
                     console.error('Error loading file list:', error);
-                    document.getElementById('file-list-container').innerHTML = '<div class="empty-message">Error loading files</div>';
+                    document.getElementById('file-list-container').innerHTML = '<div class="empty-message" style="color: #e74c3c;">Error: ' + error.message + '</div>';
                 });
         }
 
@@ -548,7 +562,7 @@
 
         // Download file
         function downloadFile(path) {
-            window.location.href = '/api/files/download?path=' + encodeURIComponent(path);
+            window.location.href = '/api/files/download?path=' + path;
         }
 
         // Show create folder modal

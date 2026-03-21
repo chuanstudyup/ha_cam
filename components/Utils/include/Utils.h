@@ -154,4 +154,16 @@ uint64_t getEfuseMac();
  * @param gwIp 存储默认网关的缓冲区，长度至少为16字节
  */
 void netLocalIP(char ipAddr[16], char ipMask[16], char gwIp[16]);
+
+/**
+ * @brief 下载文件并发送HTTP响应
+ *
+ * 将指定文件通过HTTP响应发送给客户端，设置响应头信息并记录下载统计信息。
+ *
+ * @param filePath 文件完整路径
+ * @param df 已打开的文件指针
+ * @param req HTTP请求句柄
+ * @return esp_err_t 下载结果状态码
+ */
+esp_err_t downloadFile(const char *filePath, FILE *df, httpd_req_t *req);
 #endif

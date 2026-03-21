@@ -328,8 +328,6 @@
             }
 
             isUploading = true;
-            const formData = new FormData();
-            formData.append('file', file);
 
             // 禁用按钮
             document.getElementById('start-btn').disabled = true;
@@ -389,7 +387,8 @@
             };
 
             xhr.open('POST', '/update');
-            xhr.send(formData);
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.send(file);
         }
 
         // 取消OTA更新

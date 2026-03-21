@@ -8,9 +8,11 @@
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 25px;
+            width: 100%;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
             background-color: #f5f5f5;
             color: #333;
         }
@@ -26,6 +28,8 @@
             padding: 25px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
         }
         h1 {
             color: #2c3e50;
@@ -36,16 +40,39 @@
         }
         .video-container {
             position: relative;
-            width: 100%;
+            display: inline-block;
             border-radius: 6px;
             overflow: hidden;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background-color: #000;
+        }
+        .save-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 6px 12px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .video-container:hover .save-btn,
+        .save-btn.visible {
+            opacity: 1;
+        }
+        .save-btn:hover {
+            background-color: rgba(0, 0, 0, 0.8);
         }
         #stream {
-            width: 100%;
+            display: block;
             background-color: #000;
-            aspect-ratio: 4/3;
-            object-fit: cover;
+            width: 640px;
+            height: 480px;
+            object-fit: contain;
         }
         .top-controls {
             display: flex;
@@ -101,17 +128,20 @@
         }
         .config-form > div {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
+            align-items: center;
+            gap: 15px;
         }
         .config-form label {
             display: block;
-            margin-bottom: 8px;
+            min-width: 150px;
+            margin-bottom: 0;
             font-weight: 500;
             color: #34495e;
         }
         .config-form input, .config-form select {
-            width: 100%;
-            padding: 10px;
+            flex: 1;
+            padding: 8px;
             box-sizing: border-box;
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -135,6 +165,7 @@
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
         }
         .media-container h3 {
             margin-top: 0;
@@ -164,6 +195,45 @@
                 min-width: 100px;
             }
         }
+        /* 折叠面板样式 */
+        .config-panel {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            background-color: #f8f9fa;
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background-color: #e9ecef;
+            cursor: pointer;
+            user-select: none;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+        .panel-header:hover {
+            background-color: #dee2e6;
+        }
+        .panel-header .arrow {
+            transition: transform 0.3s ease;
+            font-size: 12px;
+        }
+        .config-panel.expanded .panel-header .arrow {
+            transform: rotate(90deg);
+        }
+        .panel-content {
+            display: none;
+        }
+        .config-panel.expanded .panel-content {
+            display: block;
+        }
+        .panel-inner {
+            padding: 15px;
+            background-color: white;
+        }
     </style>
 <body>
     <div class="container">
@@ -173,7 +243,7 @@
         <div class="top-controls">
             <button onclick="startStream()">Start Stream</button>
             <button onclick="stopStream()">Stop Stream</button>
-            <button onclick="captureImage()">Capture Image</button>
+            <button id="captureBtn" onclick="captureImage()">Capture Image</button>
             <button onclick="window.location.href='/files.html'">File Manager</button>
             <button onclick="window.location.href='/ota.html'">OTA Update</button>
         </div>
@@ -186,50 +256,69 @@
                     <button onclick="loadCameraConfig()">Load Config</button>
                     <button onclick="saveConfig()">Save Config</button>
                 </div>
-                <form class="config-form" id="configForm">
-                    <div>
-                        <label for="frameSize">Resolution:</label>
-                        <select id="frameSize" name="frameSize">
-                            <option value="">Loading resolutions...</option>
-                        </select>
+
+                <!-- 图像配置面板 (默认展开) -->
+                <div class="config-panel expanded">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <span>Image</span>
+                        <span class="arrow">&#9654;</span>
                     </div>
-                    <div>
-                        <label for="quality">JPEG Quality (10-63):</label>
-                        <input type="number" id="quality" name="quality" min="10" max="63" value="40">
+                    <div class="panel-content">
+                        <div class="panel-inner">
+                            <form class="config-form" id="configForm">
+                                <div>
+                                    <label for="frameSize">Resolution:</label>
+                                    <select id="frameSize" name="frameSize">
+                                        <option value="">Loading resolutions...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="quality">JPEG Quality (10-63):</label>
+                                    <input type="number" id="quality" name="quality" min="10" max="63" value="40">
+                                </div>
+                                <div>
+                                    <label for="brightness">Brightness (-2 to 2):</label>
+                                    <input type="number" id="brightness" name="brightness" min="-2" max="2" value="0">
+                                </div>
+                                <div>
+                                    <label for="contrast">Contrast (0 to 2):</label>
+                                    <input type="number" id="contrast" name="contrast" min="0" max="2" value="1">
+                                </div>
+                                <div>
+                                    <label for="saturation">Saturation (-2 to 2):</label>
+                                    <input type="number" id="saturation" name="saturation" min="-2" max="2" value="0">
+                                </div>
+                                <div>
+                                    <label for="sharpness">Sharpness (-2 to 2):</label>
+                                    <input type="number" id="sharpness" name="sharpness" min="-2" max="2" value="0">
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                    <div>
-                        <label for="brightness">Brightness (-2 to 2):</label>
-                        <input type="number" id="brightness" name="brightness" min="-2" max="2" value="0">
-                    </div>
-                    <div>
-                        <label for="contrast">Contrast (0 to 2):</label>
-                        <input type="number" id="contrast" name="contrast" min="0" max="2" value="1">
-                    </div>
-                    <div>
-                        <label for="saturation">Saturation (-2 to 2):</label>
-                        <input type="number" id="saturation" name="saturation" min="-2" max="2" value="0">
-                    </div>
-                    <div>
-                        <label for="sharpness">Sharpness (-2 to 2):</label>
-                        <input type="number" id="sharpness" name="sharpness" min="-2" max="2" value="0">
-                    </div>
-                </form>
+                </div>
+
+                <!-- 后续新增的配置面板将放在这里 -->
+
             </div>
-            
+
             <!-- 右侧媒体区域 -->
             <div class="media-section">
-                <!-- 视频流显示区域 -->
-                <div class="media-container">
+                <!-- 视频/图像显示容器 -->
+                <div class="media-container" id="streamContainer">
                     <h3>Live Stream</h3>
                     <div class="video-container">
                         <img id="stream">
+                        <button class="save-btn" onclick="saveCurrentImage()">Save</button>
                     </div>
                 </div>
-                
+
                 <!-- 抓拍的图片显示区域 -->
-                <div class="media-container">
+                <div class="media-container" id="snapshotContainer" style="display: none;">
                     <h3>Captured Image</h3>
-                    <img id="snapshot" alt="Captured Image">
+                    <div class="video-container">
+                        <img id="snapshot" alt="Captured Image">
+                        <button class="save-btn" onclick="saveCurrentImage()">Save</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -240,19 +329,54 @@
         let streamInterval;
         const streamElement = document.getElementById('stream');
         const snapshotElement = document.getElementById('snapshot');
-        
+
+        // 折叠面板切换函数 (手风琴效果)
+        function togglePanel(header) {
+            const panel = header.parentElement;
+            const isExpanded = panel.classList.contains('expanded');
+
+            // 收起所有其他容器
+            document.querySelectorAll('.config-panel').forEach(p => {
+                p.classList.remove('expanded');
+            });
+
+            // 如果之前是收起状态，则展开当前容器
+            if (!isExpanded) {
+                panel.classList.add('expanded');
+            }
+        }
+
         // 启动 MJPEG 流媒体
         function startStream() {
             console.log('Starting stream...');
             // 首先停止任何现有的流
             stopStream();
-            
+
+            // 禁用 Capture Image 按钮
+            document.getElementById('captureBtn').disabled = true;
+
+            // 隐藏 Captured Image，显示 Live Stream
+            document.getElementById('snapshotContainer').style.display = 'none';
+            document.getElementById('streamContainer').style.display = 'block';
+
+            // 监听加载，获取实际分辨率
+            streamElement.onload = function() {
+                if (this.naturalWidth && this.naturalHeight) {
+                    this.style.width = this.naturalWidth + 'px';
+                    this.style.height = this.naturalHeight + 'px';
+                    console.log('Stream resolution:', this.naturalWidth, 'x', this.naturalHeight);
+                }
+            };
+
             // 然后启动新的流（添加时间戳防止缓存）
             const streamUrl = '/stream?' + new Date().getTime();
             console.log('Setting src to:', streamUrl);
             streamElement.src = streamUrl;
+
+            // 显示保存按钮
+            updateSaveButtonVisibility();
         }
-        
+
         // 停止流媒体
         function stopStream() {
             console.log('Stopping stream...');
@@ -261,17 +385,77 @@
                 streamInterval = null;
             }
             streamElement.src = '';
+            streamElement.onload = null;
+
+            // 隐藏保存按钮
+            document.querySelectorAll('.save-btn').forEach(btn => {
+                btn.classList.remove('visible');
+            });
+
+            // 启用 Capture Image 按钮
+            document.getElementById('captureBtn').disabled = false;
         }
-        
+
         // 抓取单张图片
         function captureImage() {
+            // 停止流
+            stopStream();
+
+            // 隐藏 Live Stream，显示 Captured Image
+            document.getElementById('streamContainer').style.display = 'none';
+            const snapshotContainer = document.getElementById('snapshotContainer');
+            snapshotContainer.style.display = 'block';
+
             fetch('/picture')
                 .then(response => response.blob())
                 .then(blob => {
                     const url = URL.createObjectURL(blob);
                     snapshotElement.src = url;
                     snapshotElement.style.display = 'block';
+                    // 显示保存按钮
+                    updateSaveButtonVisibility();
                 });
+        }
+
+        // 保存当前图像
+        function saveCurrentImage() {
+            // 判断当前显示的是视频流还是捕获的图片
+            let imgElement;
+            let filename;
+
+            if (document.getElementById('streamContainer').style.display !== 'none') {
+                imgElement = streamElement;
+                filename = 'stream_' + Date.now() + '.jpg';
+            } else if (document.getElementById('snapshotContainer').style.display !== 'none') {
+                imgElement = snapshotElement;
+                filename = 'capture_' + Date.now() + '.jpg';
+            }
+
+            if (!imgElement || !imgElement.src) return;
+
+            // 创建 canvas 保存图像
+            const canvas = document.createElement('canvas');
+            canvas.width = imgElement.naturalWidth || imgElement.clientWidth;
+            canvas.height = imgElement.naturalHeight || imgElement.clientHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+
+            // 下载
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/jpeg');
+            link.click();
+        }
+
+        // 显示/隐藏保存按钮
+        function updateSaveButtonVisibility() {
+            const hasStream = streamElement.src && streamElement.src !== window.location.href;
+            const hasSnapshot = snapshotElement.src && snapshotElement.src !== window.location.href;
+            const hasImage = hasStream || hasSnapshot;
+
+            document.querySelectorAll('.save-btn').forEach(btn => {
+                btn.classList.toggle('visible', hasImage);
+            });
         }
         
         // 保存配置
@@ -366,7 +550,7 @@
         
         // 加载当前相机配置
         function loadCurrentConfig() {
-            fetch('/config?cfg=sensor')
+            fetch('/config?cfg=image')
                 .then(response => response.json())
                 .then(config => {
                     console.log('Loaded camera config:', config);

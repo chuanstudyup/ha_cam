@@ -233,7 +233,7 @@ static esp_err_t ota_html_handler(httpd_req_t *req)
 
 /**
  * @brief 获取配置HTTP处理函数
- * /config?cfg=sensor - 获取传感器配置
+ * /config?cfg=image - 获取图像配置
  * /config?cap=framesizes - 获取支持的帧大小
  */
 static esp_err_t get_config_html_handler(httpd_req_t *req)
@@ -245,7 +245,7 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
         char param[16] = {0};
         if (httpd_query_key_value(cfg, "cfg", param, sizeof(param)) == ESP_OK)
         {
-            if (strcmp(param, "sensor") == 0)
+            if (strcmp(param, "image") == 0)
             {
                 char *json_str = get_camera_sensor_settings_json();
                 if (json_str)

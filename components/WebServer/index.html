@@ -292,6 +292,86 @@
                                     <label for="sharpness">Sharpness (-2 to 2):</label>
                                     <input type="number" id="sharpness" name="sharpness" min="-2" max="2" value="0">
                                 </div>
+                                <!-- 新增配置 -->
+                                <div>
+                                    <label for="aec">Auto Exposure:</label>
+                                    <select id="aec" name="aec">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="ae_level">AE Level (0-5):</label>
+                                    <input type="number" id="ae_level" name="ae_level" min="0" max="5" value="0">
+                                </div>
+                                <div>
+                                    <label for="agc">Auto Gain:</label>
+                                    <select id="agc" name="agc">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="awb">Auto White Balance:</label>
+                                    <select id="awb" name="awb">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="wb_mode">WB Mode:</label>
+                                    <select id="wb_mode" name="wb_mode">
+                                        <option value="0" selected>Auto</option>
+                                        <option value="1">Sunny</option>
+                                        <option value="2">Cloudy</option>
+                                        <option value="3">Tungsten</option>
+                                        <option value="4">Fluorescent</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="hmirror">H-Mirror:</label>
+                                    <select id="hmirror" name="hmirror">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="vflip">V-Flip:</label>
+                                    <select id="vflip" name="vflip">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="special_effect">Special Effect:</label>
+                                    <select id="special_effect" name="special_effect">
+                                        <option value="0" selected>None</option>
+                                        <option value="1">Negative</option>
+                                        <option value="2">Grayscale</option>
+                                        <option value="3">Red Tint</option>
+                                        <option value="4">Green Tint</option>
+                                        <option value="5">Blue Tint</option>
+                                        <option value="6">Sepia</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="denoise">Denoise (0-8):</label>
+                                    <input type="number" id="denoise" name="denoise" min="0" max="8" value="0">
+                                </div>
+                                <div>
+                                    <label for="lenc">Lens Correction:</label>
+                                    <select id="lenc" name="lenc">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="dcw">Dynamic Denoise:</label>
+                                    <select id="dcw" name="dcw">
+                                        <option value="0">Off</option>
+                                        <option value="1" selected>On</option>
+                                    </select>
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -460,22 +540,37 @@
         
         // 保存配置
         function saveConfig() {
-            const configData = {};
-            
+            const configData = {
+                image: {}
+            };
+
             // 获取分辨率（整数类型）
             const frameSizeSelect = document.getElementById('frameSize');
-            configData.frameSize = parseInt(frameSizeSelect.value, 10);
-            
+            configData.image.frameSize = parseInt(frameSizeSelect.value, 10);
+
             // 获取其他数值类型的参数
-            configData.quality = parseInt(document.getElementById('quality').value, 10);
-            configData.brightness = parseInt(document.getElementById('brightness').value, 10);
-            configData.contrast = parseInt(document.getElementById('contrast').value, 10);
-            configData.saturation = parseInt(document.getElementById('saturation').value, 10);
-            configData.sharpness = parseInt(document.getElementById('sharpness').value, 10);
-            
+            configData.image.quality = parseInt(document.getElementById('quality').value, 10);
+            configData.image.brightness = parseInt(document.getElementById('brightness').value, 10);
+            configData.image.contrast = parseInt(document.getElementById('contrast').value, 10);
+            configData.image.saturation = parseInt(document.getElementById('saturation').value, 10);
+            configData.image.sharpness = parseInt(document.getElementById('sharpness').value, 10);
+
+            // 新增配置参数
+            configData.image.denoise = parseInt(document.getElementById('denoise').value, 10);
+            configData.image.aec = parseInt(document.getElementById('aec').value, 10);
+            configData.image.ae_level = parseInt(document.getElementById('ae_level').value, 10);
+            configData.image.agc = parseInt(document.getElementById('agc').value, 10);
+            configData.image.awb = parseInt(document.getElementById('awb').value, 10);
+            configData.image.wb_mode = parseInt(document.getElementById('wb_mode').value, 10);
+            configData.image.hmirror = parseInt(document.getElementById('hmirror').value, 10);
+            configData.image.vflip = parseInt(document.getElementById('vflip').value, 10);
+            configData.image.special_effect = parseInt(document.getElementById('special_effect').value, 10);
+            configData.image.lenc = parseInt(document.getElementById('lenc').value, 10);
+            configData.image.dcw = parseInt(document.getElementById('dcw').value, 10);
+
             // 调试信息：显示发送的配置数据
             console.log('Sending config data:', configData);
-            
+
             // 发送配置请求
             fetch('/config', {
                 method: 'POST',
@@ -554,38 +649,76 @@
                 .then(response => response.json())
                 .then(config => {
                     console.log('Loaded camera config:', config);
-                    
+
+                    // 从 image 对象中获取配置
+                    const image = config.image || {};
+
                     // 更新表单字段
-                    if (config.framesize) {
+                    if (image.framesize) {
                         const frameSizeSelect = document.getElementById('frameSize');
                         for (let i = 0; i < frameSizeSelect.options.length; i++) {
-                            if (frameSizeSelect.options[i].textContent === config.framesize) {
+                            if (frameSizeSelect.options[i].textContent === image.framesize) {
                                 frameSizeSelect.selectedIndex = i;
                                 break;
                             }
                         }
                     }
-                    
-                    if (config.quality !== undefined) {
-                        document.getElementById('quality').value = config.quality;
+
+                    if (image.quality !== undefined) {
+                        document.getElementById('quality').value = image.quality;
                     }
-                    
-                    if (config.brightness !== undefined) {
-                        document.getElementById('brightness').value = config.brightness;
+
+                    if (image.brightness !== undefined) {
+                        document.getElementById('brightness').value = image.brightness;
                     }
-                    
-                    if (config.contrast !== undefined) {
-                        document.getElementById('contrast').value = config.contrast;
+
+                    if (image.contrast !== undefined) {
+                        document.getElementById('contrast').value = image.contrast;
                     }
-                    
-                    if (config.saturation !== undefined) {
-                        document.getElementById('saturation').value = config.saturation;
+
+                    if (image.saturation !== undefined) {
+                        document.getElementById('saturation').value = image.saturation;
                     }
-                    
-                    if (config.sharpness !== undefined) {
-                        document.getElementById('sharpness').value = config.sharpness;
+
+                    if (image.sharpness !== undefined) {
+                        document.getElementById('sharpness').value = image.sharpness;
                     }
-                    
+
+                    // 新增配置参数加载
+                    if (image.denoise !== undefined) {
+                        document.getElementById('denoise').value = image.denoise;
+                    }
+                    if (image.aec !== undefined) {
+                        document.getElementById('aec').value = image.aec;
+                    }
+                    if (image.ae_level !== undefined) {
+                        document.getElementById('ae_level').value = image.ae_level;
+                    }
+                    if (image.agc !== undefined) {
+                        document.getElementById('agc').value = image.agc;
+                    }
+                    if (image.awb !== undefined) {
+                        document.getElementById('awb').value = image.awb;
+                    }
+                    if (image.wb_mode !== undefined) {
+                        document.getElementById('wb_mode').value = image.wb_mode;
+                    }
+                    if (image.hmirror !== undefined) {
+                        document.getElementById('hmirror').value = image.hmirror;
+                    }
+                    if (image.vflip !== undefined) {
+                        document.getElementById('vflip').value = image.vflip;
+                    }
+                    if (image.special_effect !== undefined) {
+                        document.getElementById('special_effect').value = image.special_effect;
+                    }
+                    if (image.lenc !== undefined) {
+                        document.getElementById('lenc').value = image.lenc;
+                    }
+                    if (image.dcw !== undefined) {
+                        document.getElementById('dcw').value = image.dcw;
+                    }
+
                     // 成功不弹窗
                     console.log('Camera configuration loaded successfully');
                 })

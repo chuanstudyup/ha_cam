@@ -185,17 +185,31 @@ char *get_camera_sensor_settings_json(void)
     camera_status_t* status = &(sen->status);
 
     cJSON *root = cJSON_CreateObject();
+    cJSON *image = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "image", image);
+
     char frameSizeStr[32] = {0};
     snprintf(frameSizeStr, sizeof(frameSizeStr), "%s(%dx%d)",
              frameData[status->framesize].frameSizeStr,
              frameData[status->framesize].frameWidth,
              frameData[status->framesize].frameHeight);
-    cJSON_AddStringToObject(root, "framesize", frameSizeStr);
-    cJSON_AddNumberToObject(root, "brightness", status->brightness);
-    cJSON_AddNumberToObject(root, "contrast", status->contrast);
-    cJSON_AddNumberToObject(root, "saturation", status->saturation);
-    cJSON_AddNumberToObject(root, "sharpness", status->sharpness);
-    cJSON_AddNumberToObject(root, "quality", status->quality);
+    cJSON_AddStringToObject(image, "framesize", frameSizeStr);
+    cJSON_AddNumberToObject(image, "brightness", status->brightness);
+    cJSON_AddNumberToObject(image, "contrast", status->contrast);
+    cJSON_AddNumberToObject(image, "saturation", status->saturation);
+    cJSON_AddNumberToObject(image, "sharpness", status->sharpness);
+    cJSON_AddNumberToObject(image, "quality", status->quality);
+    cJSON_AddNumberToObject(image, "denoise", status->denoise);
+    cJSON_AddNumberToObject(image, "aec", status->aec);
+    cJSON_AddNumberToObject(image, "ae_level", status->ae_level);
+    cJSON_AddNumberToObject(image, "agc", status->agc);
+    cJSON_AddNumberToObject(image, "awb", status->awb);
+    cJSON_AddNumberToObject(image, "wb_mode", status->wb_mode);
+    cJSON_AddNumberToObject(image, "hmirror", status->hmirror);
+    cJSON_AddNumberToObject(image, "vflip", status->vflip);
+    cJSON_AddNumberToObject(image, "special_effect", status->special_effect);
+    cJSON_AddNumberToObject(image, "lenc", status->lenc);
+    cJSON_AddNumberToObject(image, "dcw", status->dcw);
 
     char *json_str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -240,111 +254,271 @@ esp_err_t apply_camera_config(cJSON *config_json)
         return ESP_FAIL;
     }
 
-    cJSON *frameSize = cJSON_GetObjectItem(config_json, "frameSize");
-    cJSON *brightness = cJSON_GetObjectItem(config_json, "brightness");
-    cJSON *contrast = cJSON_GetObjectItem(config_json, "contrast");
-    cJSON *saturation = cJSON_GetObjectItem(config_json, "saturation");
-    cJSON *sharpness = cJSON_GetObjectItem(config_json, "sharpness");
-    cJSON *quality = cJSON_GetObjectItem(config_json, "quality");
+    // 获取 image 对象
+    cJSON *image = cJSON_GetObjectItem(config_json, "image");
+    if (!image) {
+        ESP_LOGE(TAG, "image object not found in config");
+        return ESP_FAIL;
+    }
 
+    // 获取当前配置状态
+    camera_status_t *status = &(sen->status);
+
+    // frameSize
+    cJSON *frameSize = cJSON_GetObjectItem(image, "frameSize");
     if (frameSize) {
-
-        int fs = -99; // invalid frame size
-        if (cJSON_IsNumber(frameSize))
-        {
+        int fs = -99;
+        if (cJSON_IsNumber(frameSize)) {
             fs = frameSize->valueint;
-        }
-        else if (cJSON_IsString(frameSize))
-        {
+        } else if (cJSON_IsString(frameSize)) {
             fs = atoi(frameSize->valuestring);
         }
-        if (fs >= FRAMESIZE_FHD)
-        {
-            fs = FRAMESIZE_FHD; // 默认最大分辨率
+        if (fs >= FRAMESIZE_FHD) {
+            fs = FRAMESIZE_FHD;
         }
-        if (fs >= 0 && fs < FRAMESIZE_INVALID) {
+        if (fs >= 0 && fs < FRAMESIZE_INVALID && fs != status->framesize) {
             sen->set_framesize(sen, (framesize_t)fs);
             ESP_LOGI(TAG, "Set frame size to: %d", fs);
         }
     }
 
+    // brightness (-2 ~ 2)
+    cJSON *brightness = cJSON_GetObjectItem(image, "brightness");
     if (brightness) {
         int br = -99;
-        if (cJSON_IsNumber(brightness))
-        {
+        if (cJSON_IsNumber(brightness)) {
             br = brightness->valueint;
-        }
-        else if (cJSON_IsString(brightness))
-        {
+        } else if (cJSON_IsString(brightness)) {
             br = atoi(brightness->valuestring);
         }
-        if (br >= -2 && br <= 2) {
+        if (br >= -2 && br <= 2 && br != status->brightness) {
             sen->set_brightness(sen, br);
             ESP_LOGI(TAG, "Set brightness to: %d", br);
         }
     }
 
+    // contrast (0 ~ 2)
+    cJSON *contrast = cJSON_GetObjectItem(image, "contrast");
     if (contrast) {
         int ct = -99;
-        if (cJSON_IsNumber(contrast))
-        {
+        if (cJSON_IsNumber(contrast)) {
             ct = contrast->valueint;
+        } else if (cJSON_IsString(contrast)) {
+            ct = atoi(contrast->valuestring);
         }
-        else if (cJSON_IsString(contrast))
-        {
-            ct = atoi(contrast->valuestring);   
-        }
-        if (ct >= 0 && ct <= 2) {
+        if (ct >= 0 && ct <= 2 && ct != status->contrast) {
             sen->set_contrast(sen, ct);
             ESP_LOGI(TAG, "Set contrast to: %d", ct);
         }
     }
 
+    // saturation (-2 ~ 2)
+    cJSON *saturation = cJSON_GetObjectItem(image, "saturation");
     if (saturation) {
         int st = -99;
-        if (cJSON_IsNumber(saturation))
-        {
+        if (cJSON_IsNumber(saturation)) {
             st = saturation->valueint;
-        }
-        else if (cJSON_IsString(saturation))
-        {
+        } else if (cJSON_IsString(saturation)) {
             st = atoi(saturation->valuestring);
         }
-        if (st >= -2 && st <= 2) {
+        if (st >= -2 && st <= 2 && st != status->saturation) {
             sen->set_saturation(sen, st);
             ESP_LOGI(TAG, "Set saturation to: %d", st);
         }
     }
 
+    // sharpness (-2 ~ 2)
+    cJSON *sharpness = cJSON_GetObjectItem(image, "sharpness");
     if (sharpness) {
         int sh = -99;
-        if (cJSON_IsNumber(sharpness))
-        {
+        if (cJSON_IsNumber(sharpness)) {
             sh = sharpness->valueint;
-        }
-        else if (cJSON_IsString(sharpness))
-        {
+        } else if (cJSON_IsString(sharpness)) {
             sh = atoi(sharpness->valuestring);
         }
-        if (sh >= -2 && sh <= 2) {
+        if (sh >= -2 && sh <= 2 && sh != status->sharpness) {
             sen->set_sharpness(sen, sh);
             ESP_LOGI(TAG, "Set sharpness to: %d", sh);
         }
     }
 
+    // quality (10 ~ 63)
+    cJSON *quality = cJSON_GetObjectItem(image, "quality");
     if (quality) {
         int ql = -99;
-        if (cJSON_IsNumber(quality))
-        {
+        if (cJSON_IsNumber(quality)) {
             ql = quality->valueint;
-        }
-        else if (cJSON_IsString(quality))
-        {
+        } else if (cJSON_IsString(quality)) {
             ql = atoi(quality->valuestring);
         }
-        if (ql >= 10 && ql <= 63) {
+        if (ql >= 10 && ql <= 63 && ql != status->quality) {
             sen->set_quality(sen, ql);
             ESP_LOGI(TAG, "Set quality to: %d", ql);
+        }
+    }
+
+    // denoise (0 ~ 8)
+    cJSON *denoise = cJSON_GetObjectItem(image, "denoise");
+    if (denoise) {
+        int dn = -99;
+        if (cJSON_IsNumber(denoise)) {
+            dn = denoise->valueint;
+        } else if (cJSON_IsString(denoise)) {
+            dn = atoi(denoise->valuestring);
+        }
+        if (dn >= 0 && dn <= 8 && dn != status->denoise) {
+            sen->set_denoise(sen, dn);
+            ESP_LOGI(TAG, "Set denoise to: %d", dn);
+        }
+    }
+
+    // aec - auto exposure (0/1)
+    cJSON *aec = cJSON_GetObjectItem(image, "aec");
+    if (aec) {
+        int ac = -99;
+        if (cJSON_IsNumber(aec)) {
+            ac = aec->valueint;
+        } else if (cJSON_IsString(aec)) {
+            ac = atoi(aec->valuestring);
+        }
+        if (ac >= 0 && ac <= 1 && ac != status->aec) {
+            sen->set_exposure_ctrl(sen, ac);
+            ESP_LOGI(TAG, "Set aec to: %d", ac);
+        }
+    }
+
+    // ae_level (0 ~ 5)
+    cJSON *ae_level = cJSON_GetObjectItem(image, "ae_level");
+    if (ae_level) {
+        int al = -99;
+        if (cJSON_IsNumber(ae_level)) {
+            al = ae_level->valueint;
+        } else if (cJSON_IsString(ae_level)) {
+            al = atoi(ae_level->valuestring);
+        }
+        if (al >= 0 && al <= 5 && al != status->ae_level) {
+            sen->set_ae_level(sen, al);
+            ESP_LOGI(TAG, "Set ae_level to: %d", al);
+        }
+    }
+
+    // agc - auto gain (0/1)
+    cJSON *agc = cJSON_GetObjectItem(image, "agc");
+    if (agc) {
+        int ag = -99;
+        if (cJSON_IsNumber(agc)) {
+            ag = agc->valueint;
+        } else if (cJSON_IsString(agc)) {
+            ag = atoi(agc->valuestring);
+        }
+        if (ag >= 0 && ag <= 1 && ag != status->agc) {
+            sen->set_gain_ctrl(sen, ag);
+            ESP_LOGI(TAG, "Set agc to: %d", ag);
+        }
+    }
+
+    // awb - auto white balance (0/1)
+    cJSON *awb = cJSON_GetObjectItem(image, "awb");
+    if (awb) {
+        int aw = -99;
+        if (cJSON_IsNumber(awb)) {
+            aw = awb->valueint;
+        } else if (cJSON_IsString(awb)) {
+            aw = atoi(awb->valuestring);
+        }
+        if (aw >= 0 && aw <= 1 && aw != status->awb) {
+            sen->set_whitebal(sen, aw);
+            ESP_LOGI(TAG, "Set awb to: %d", aw);
+        }
+    }
+
+    // wb_mode (0 ~ 4)
+    cJSON *wb_mode = cJSON_GetObjectItem(image, "wb_mode");
+    if (wb_mode) {
+        int wm = -99;
+        if (cJSON_IsNumber(wb_mode)) {
+            wm = wb_mode->valueint;
+        } else if (cJSON_IsString(wb_mode)) {
+            wm = atoi(wb_mode->valuestring);
+        }
+        if (wm >= 0 && wm <= 4 && wm != status->wb_mode) {
+            sen->set_wb_mode(sen, wm);
+            ESP_LOGI(TAG, "Set wb_mode to: %d", wm);
+        }
+    }
+
+    // hmirror (0/1)
+    cJSON *hmirror = cJSON_GetObjectItem(image, "hmirror");
+    if (hmirror) {
+        int hm = -99;
+        if (cJSON_IsNumber(hmirror)) {
+            hm = hmirror->valueint;
+        } else if (cJSON_IsString(hmirror)) {
+            hm = atoi(hmirror->valuestring);
+        }
+        if (hm >= 0 && hm <= 1 && hm != status->hmirror) {
+            sen->set_hmirror(sen, hm);
+            ESP_LOGI(TAG, "Set hmirror to: %d", hm);
+        }
+    }
+
+    // vflip (0/1)
+    cJSON *vflip = cJSON_GetObjectItem(image, "vflip");
+    if (vflip) {
+        int vf = -99;
+        if (cJSON_IsNumber(vflip)) {
+            vf = vflip->valueint;
+        } else if (cJSON_IsString(vflip)) {
+            vf = atoi(vflip->valuestring);
+        }
+        if (vf >= 0 && vf <= 1 && vf != status->vflip) {
+            sen->set_vflip(sen, vf);
+            ESP_LOGI(TAG, "Set vflip to: %d", vf);
+        }
+    }
+
+    // special_effect (0 ~ 6)
+    cJSON *special_effect = cJSON_GetObjectItem(image, "special_effect");
+    if (special_effect) {
+        int se = -99;
+        if (cJSON_IsNumber(special_effect)) {
+            se = special_effect->valueint;
+        } else if (cJSON_IsString(special_effect)) {
+            se = atoi(special_effect->valuestring);
+        }
+        if (se >= 0 && se <= 6 && se != status->special_effect) {
+            sen->set_special_effect(sen, se);
+            ESP_LOGI(TAG, "Set special_effect to: %d", se);
+        }
+    }
+
+    // lenc - lens correction (0/1)
+    cJSON *lenc = cJSON_GetObjectItem(image, "lenc");
+    if (lenc) {
+        int le = -99;
+        if (cJSON_IsNumber(lenc)) {
+            le = lenc->valueint;
+        } else if (cJSON_IsString(lenc)) {
+            le = atoi(lenc->valuestring);
+        }
+        if (le >= 0 && le <= 1 && le != status->lenc) {
+            sen->set_lenc(sen, le);
+            ESP_LOGI(TAG, "Set lenc to: %d", le);
+        }
+    }
+
+    // dcw - dynamic denoise (0/1)
+    cJSON *dcw = cJSON_GetObjectItem(image, "dcw");
+    if (dcw) {
+        int dw = -99;
+        if (cJSON_IsNumber(dcw)) {
+            dw = dcw->valueint;
+        } else if (cJSON_IsString(dcw)) {
+            dw = atoi(dcw->valuestring);
+        }
+        if (dw >= 0 && dw <= 1 && dw != status->dcw) {
+            sen->set_dcw(sen, dw);
+            ESP_LOGI(TAG, "Set dcw to: %d", dw);
         }
     }
 

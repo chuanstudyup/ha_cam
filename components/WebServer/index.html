@@ -377,6 +377,39 @@
                     </div>
                 </div>
 
+                <!-- RTSP Server 配置面板 -->
+                <div class="config-panel">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <span>RTSP Server</span>
+                        <span class="arrow">&#9654;</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="panel-inner">
+                            <form class="config-form" id="rtspForm">
+                                <div>
+                                    <label for="rtspEnable">Enable:</label>
+                                    <select id="rtspEnable" name="rtspEnable">
+                                        <option value="0">Off</option>
+                                        <option value="1">On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="rtspPort">Port (554-65535):</label>
+                                    <input type="number" id="rtspPort" name="rtspPort" min="554" max="65535" value="554">
+                                </div>
+                                <div>
+                                    <label for="rtspUser">Username:</label>
+                                    <input type="text" id="rtspUser" name="rtspUser" placeholder="admin">
+                                </div>
+                                <div>
+                                    <label for="rtspPassword">Password:</label>
+                                    <input type="password" id="rtspPassword" name="rtspPassword" placeholder="password">
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 后续新增的配置面板将放在这里 -->
 
             </div>
@@ -423,6 +456,12 @@
             // 如果之前是收起状态，则展开当前容器
             if (!isExpanded) {
                 panel.classList.add('expanded');
+
+                // 检查是否是 RTSP Server 面板
+                const rtspForm = panel.querySelector('#rtspForm');
+                if (rtspForm) {
+                    loadRtspConfig();
+                }
             }
         }
 
@@ -540,48 +579,84 @@
         
         // 保存配置
         function saveConfig() {
-            const configData = {
-                image: {}
-            };
+            // 获取当前展开的面板
+            const expandedPanel = document.querySelector('.config-panel.expanded');
+            let configData = {};
+            let cfgType = 'image';
 
-            // 获取分辨率（整数类型）
-            const frameSizeSelect = document.getElementById('frameSize');
-            configData.image.frameSize = parseInt(frameSizeSelect.value, 10);
-
-            // 获取其他数值类型的参数
-            configData.image.quality = parseInt(document.getElementById('quality').value, 10);
-            configData.image.brightness = parseInt(document.getElementById('brightness').value, 10);
-            configData.image.contrast = parseInt(document.getElementById('contrast').value, 10);
-            configData.image.saturation = parseInt(document.getElementById('saturation').value, 10);
-            configData.image.sharpness = parseInt(document.getElementById('sharpness').value, 10);
-
-            // 新增配置参数
-            configData.image.denoise = parseInt(document.getElementById('denoise').value, 10);
-            configData.image.aec = parseInt(document.getElementById('aec').value, 10);
-            configData.image.ae_level = parseInt(document.getElementById('ae_level').value, 10);
-            configData.image.agc = parseInt(document.getElementById('agc').value, 10);
-            configData.image.awb = parseInt(document.getElementById('awb').value, 10);
-            configData.image.wb_mode = parseInt(document.getElementById('wb_mode').value, 10);
-            configData.image.hmirror = parseInt(document.getElementById('hmirror').value, 10);
-            configData.image.vflip = parseInt(document.getElementById('vflip').value, 10);
-            configData.image.special_effect = parseInt(document.getElementById('special_effect').value, 10);
-            configData.image.lenc = parseInt(document.getElementById('lenc').value, 10);
-            configData.image.dcw = parseInt(document.getElementById('dcw').value, 10);
+            if (expandedPanel) {
+                const rtspForm = expandedPanel.querySelector('#rtspForm');
+                if (rtspForm) {
+                    // RTSP 面板展开，保存 RTSP 配置
+                    cfgType = 'rtsp';
+                    configData = {
+                        rtsp: {
+                            enable: document.getElementById('rtspEnable').value === '1',
+                            port: parseInt(document.getElementById('rtspPort').value, 10),
+                            user: document.getElementById('rtspUser').value,
+                            password: document.getElementById('rtspPassword').value
+                        }
+                    };
+                } else {
+                    // Image 面板展开，保存摄像头配置
+                    cfgType = 'image';
+                    configData = { image: {} };
+                    const frameSizeSelect = document.getElementById('frameSize');
+                    configData.image.frameSize = parseInt(frameSizeSelect.value, 10);
+                    configData.image.quality = parseInt(document.getElementById('quality').value, 10);
+                    configData.image.brightness = parseInt(document.getElementById('brightness').value, 10);
+                    configData.image.contrast = parseInt(document.getElementById('contrast').value, 10);
+                    configData.image.saturation = parseInt(document.getElementById('saturation').value, 10);
+                    configData.image.sharpness = parseInt(document.getElementById('sharpness').value, 10);
+                    configData.image.denoise = parseInt(document.getElementById('denoise').value, 10);
+                    configData.image.aec = parseInt(document.getElementById('aec').value, 10);
+                    configData.image.ae_level = parseInt(document.getElementById('ae_level').value, 10);
+                    configData.image.agc = parseInt(document.getElementById('agc').value, 10);
+                    configData.image.awb = parseInt(document.getElementById('awb').value, 10);
+                    configData.image.wb_mode = parseInt(document.getElementById('wb_mode').value, 10);
+                    configData.image.hmirror = parseInt(document.getElementById('hmirror').value, 10);
+                    configData.image.vflip = parseInt(document.getElementById('vflip').value, 10);
+                    configData.image.special_effect = parseInt(document.getElementById('special_effect').value, 10);
+                    configData.image.lenc = parseInt(document.getElementById('lenc').value, 10);
+                    configData.image.dcw = parseInt(document.getElementById('dcw').value, 10);
+                }
+            } else {
+                // 没有展开面板，默认保存摄像头配置
+                cfgType = 'image';
+                configData = { image: {} };
+                const frameSizeSelect = document.getElementById('frameSize');
+                configData.image.frameSize = parseInt(frameSizeSelect.value, 10);
+                configData.image.quality = parseInt(document.getElementById('quality').value, 10);
+                configData.image.brightness = parseInt(document.getElementById('brightness').value, 10);
+                configData.image.contrast = parseInt(document.getElementById('contrast').value, 10);
+                configData.image.saturation = parseInt(document.getElementById('saturation').value, 10);
+                configData.image.sharpness = parseInt(document.getElementById('sharpness').value, 10);
+                configData.image.denoise = parseInt(document.getElementById('denoise').value, 10);
+                configData.image.aec = parseInt(document.getElementById('aec').value, 10);
+                configData.image.ae_level = parseInt(document.getElementById('ae_level').value, 10);
+                configData.image.agc = parseInt(document.getElementById('agc').value, 10);
+                configData.image.awb = parseInt(document.getElementById('awb').value, 10);
+                configData.image.wb_mode = parseInt(document.getElementById('wb_mode').value, 10);
+                configData.image.hmirror = parseInt(document.getElementById('hmirror').value, 10);
+                configData.image.vflip = parseInt(document.getElementById('vflip').value, 10);
+                configData.image.special_effect = parseInt(document.getElementById('special_effect').value, 10);
+                configData.image.lenc = parseInt(document.getElementById('lenc').value, 10);
+                configData.image.dcw = parseInt(document.getElementById('dcw').value, 10);
+            }
 
             // 调试信息：显示发送的配置数据
-            console.log('Sending config data:', configData);
+            console.log('Sending config data:', configData, 'cfg:', cfgType);
 
-            // 发送配置请求
-            fetch('/config', {
+            // 发送配置请求，带 cfg 参数
+            fetch('/config?cfg=' + cfgType, {
                 method: 'POST',
-                body: JSON.stringify(configData),  // 发送JSON格式数据
+                body: JSON.stringify(configData),
                 headers: {
                     'Content-Type': 'application/json'
                 }
             })
             .then(response => {
                 if (response.ok) {
-                    // 成功不弹窗
                     console.log('Configuration saved successfully');
                 } else {
                     alert('Failed to save configuration');
@@ -591,6 +666,32 @@
                 console.error('Config save error:', error);
                 alert('Error saving configuration');
             });
+        }
+
+        // 加载 RTSP 配置
+        function loadRtspConfig() {
+            fetch('/config?cfg=rtsp')
+                .then(response => response.json())
+                .then(config => {
+                    console.log('Loaded RTSP config:', config);
+                    // 返回的 JSON 格式是 {"rtsp":{"Enable":true,"Port":554,...}}
+                    const rtsp = config.rtsp || config;
+                    if (rtsp.Enable !== undefined) {
+                        document.getElementById('rtspEnable').value = rtsp.Enable ? '1' : '0';
+                    }
+                    if (rtsp.Port !== undefined) {
+                        document.getElementById('rtspPort').value = rtsp.Port;
+                    }
+                    if (rtsp.User !== undefined) {
+                        document.getElementById('rtspUser').value = rtsp.User;
+                    }
+                    if (rtsp.Password !== undefined) {
+                        document.getElementById('rtspPassword').value = rtsp.Password;
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to load RTSP config:', error);
+                });
         }
         
         // 根据视频实际播放状态更新按钮
@@ -732,12 +833,12 @@
         function loadCameraConfig() {
             loadCurrentConfig();
         }
-        
+
         // 页面加载时自动加载分辨率列表和配置
         window.addEventListener('load', function() {
             loadSupportedResolutions();
         });
-        
+
         // 初始化按钮状态
         updateButtonStates();
     </script>

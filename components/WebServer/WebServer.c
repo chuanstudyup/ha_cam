@@ -31,6 +31,7 @@
 #include "storage.h"
 #include "WebServer.h"
 #include "Utils.h"
+#include "paramCenter.h"
 
 static const char *TAG = "WebServer";
 
@@ -256,6 +257,22 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
                     return ESP_OK;
                 }
             }
+            else if (strcmp(param, "rtsp") == 0)
+            {
+                cJSON *rtsp_json = get_module_json_str(CONFIG_RTSP_SERVER);
+                if (rtsp_json)
+                {
+                    char *json_str = cJSON_PrintUnformatted(rtsp_json);
+                    cJSON_Delete(rtsp_json);
+                    if (json_str)
+                    {
+                        httpd_resp_set_type(req, "application/json");
+                        httpd_resp_send(req, json_str, strlen(json_str));
+                        free(json_str);
+                        return ESP_OK;
+                    }
+                }
+            }
         }
         if (httpd_query_key_value(cfg, "cap", param, sizeof(param)) == ESP_OK)
         {
@@ -281,13 +298,14 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
 /**
  * @brief 设置配置HTTP处理函数
  * POST请求，接收JSON配置并应用
+ * 参数: cfg=image 或 cfg=rtsp，决定保存哪个配置
  */
 static esp_err_t set_config_html_handler(httpd_req_t *req)
 {
     // 处理POST请求（配置保存）
     if (req->method == HTTP_POST)
     {
-        char buf[256];
+        char buf[1024];
         int ret, remaining = req->content_len;
 
         // 读取请求体
@@ -302,11 +320,72 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
         buf[ret] = '\0';
         ESP_LOGI(TAG, "Received config: %s", buf);
 
+        // 获取 cfg 参数
+        char query_str[32] = {0};
+        char cfg_type[16] = {0};
+        if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK)
+        {
+            httpd_query_key_value(query_str, "cfg", cfg_type, sizeof(cfg_type));
+        }
+
         // 解析JSON配置
         cJSON *config_json = cJSON_Parse(buf);
         if (config_json)
         {
-            esp_err_t result = apply_camera_config(config_json);
+            esp_err_t result = ESP_OK;
+
+            // 根据 cfg 参数决定保存哪个配置
+            if (strcmp(cfg_type, "rtsp") == 0)
+            {
+                // 只保存 RTSP 配置
+                cJSON *rtsp = cJSON_GetObjectItem(config_json, "rtsp");
+                if (rtsp)
+                {
+                    cJSON *enable = cJSON_GetObjectItem(rtsp, "enable");
+                    cJSON *port = cJSON_GetObjectItem(rtsp, "port");
+                    cJSON *user = cJSON_GetObjectItem(rtsp, "user");
+                    cJSON *password = cJSON_GetObjectItem(rtsp, "password");
+
+                    if (enable)
+                    {
+                        bool en = cJSON_IsTrue(enable);
+                        if (en != get_param_bool(CONFIG_RTSP_SERVER, RTSP_SERVER_ENABLE))
+                        {
+                            ESP_LOGI(TAG, "RTSP enable changed: %s -> %s", get_param_bool(CONFIG_RTSP_SERVER, RTSP_SERVER_ENABLE) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_RTSP_SERVER, RTSP_SERVER_ENABLE, en, false);
+                        }
+                    }
+
+                    if (port && cJSON_IsNumber(port))
+                    {
+                        if (port->valueint != get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT))
+                        {
+                            ESP_LOGI(TAG, "RTSP port changed: %d -> %d", get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT), port->valueint);
+                            set_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT, port->valueint, false);
+                        }
+                    }
+
+                    if (user && cJSON_IsString(user) && password && cJSON_IsString(password))
+                    {
+                        set_param_str(CONFIG_RTSP_SERVER, RTSP_SERVER_USER, user->valuestring, false);
+                        set_param_str(CONFIG_RTSP_SERVER, RTSP_SERVER_PASSWORD, password->valuestring, false);
+                    }
+
+                    save_config(CONFIG_RTSP_SERVER);
+                    restart_rtsp_server();
+                    ESP_LOGI(TAG, "RTSP config saved and server restarted");
+                }
+            }
+            else
+            {
+                // 默认保存摄像头配置 (cfg=image 或没有 cfg 参数)
+                cJSON *image = cJSON_GetObjectItem(config_json, "image");
+                if (image)
+                {
+                    result = apply_camera_config(config_json);
+                }
+            }
+
             cJSON_Delete(config_json);
 
             if (result == ESP_OK)

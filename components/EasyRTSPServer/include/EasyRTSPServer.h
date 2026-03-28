@@ -10,7 +10,7 @@
 #define LEN_MAX_SUFFIX 16
 #define LEN_MAX_IP 16
 #define LEN_MAX_URL 64
-#define LEN_MAX_AUTH 64
+#define LEN_MAX_AUTH 128
 #define MAX_CLIENTS_NUM 3
 
 #define SERVER_RTP_PORT_BASE 57000
@@ -150,11 +150,12 @@ typedef struct _RTSPServer{
 /*****************  RTSPservr **********************/
 RTSPServer* RTSPServer_Create();
 void RTSPServer_Destory(RTSPServer* rtspServer);
-bool RTSPServer_Start(RTSPServer* rtspServer,  char* serverip, int port);
+bool RTSPServer_Start(RTSPServer* rtspServer, int port);
 void RTSPServer_Stop(RTSPServer* rtspServer);
 bool RTSPServer_SetStreamSuffix(RTSPServer* rtspServer, char* suffix);
 bool RTSPServer_SetFrameRate(RTSPServer* rtspServer, enum RTSP_FRAMERATE frameRate);
 bool RTSPServer_SetAuthAccount(RTSPServer* rtspServer, char* username, char* pwd);
 int RTSPServer_GetStreamingSessionCounts(RTSPServer* rtspServer);
 int RTSPServer_GetSessionCounts(RTSPServer* rtspServer);
+RTSPServer *RTSPServer_GetInstance();
 #endif

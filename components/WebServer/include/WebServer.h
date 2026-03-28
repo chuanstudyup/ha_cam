@@ -26,4 +26,11 @@ httpd_handle_t web_server_start(void);
  */
 void web_server_stop(httpd_handle_t server);
 
+/**
+ * @brief 重启RTSP服务器
+ *
+ * 停止当前RTSP服务器并根据最新配置重新启动
+ */
+void restart_rtsp_server(void);
+
 #endif /* _WEB_SERVER_H_ */

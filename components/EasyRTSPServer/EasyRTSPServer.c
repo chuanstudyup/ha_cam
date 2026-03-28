@@ -4,6 +4,7 @@
 #include "esp_timer.h"
 #include "vCenter.h"
 #include "Camera.h"
+#include "Utils.h"
 
 #ifdef ENABL_AUDIO_STREAM
 #include "Mic.h"
@@ -909,6 +910,13 @@ bool RTSPServer_SetAuthAccount(RTSPServer *rtspServer, char *username, char *pwd
   char ori_str[32] = {0};
   char encode_str[128] = {0};
   size_t len = 0;
+  if (strlen(username) == 0 || strlen(pwd) == 0)
+  {
+    memset(rtspServer->streamInfo.authStr, 0, sizeof(rtspServer->streamInfo.authStr));
+    ESP_LOGI(TAG, "Auth disabled\n");
+    return true;
+  }
+
   if (strlen(username) + strlen(pwd) < 32)
   {
     int l = sprintf(ori_str, "%s:%s", username, pwd);
@@ -947,23 +955,36 @@ static void rtspUpdateFrameSize(RTSPServer *server)
   ESP_LOGI(TAG, "update frame size: %dx%d", width, height);
 }
 
+static RTSPServer* l_rtspServer = NULL;
+
 RTSPServer *RTSPServer_Create()
 {
-  RTSPServer *server = (RTSPServer *)malloc(sizeof(RTSPServer));
-  if (server == NULL)
+  if (l_rtspServer != NULL)
+  {
+    ESP_LOGW(TAG, "RTSPServer instance already exists, returning the existing instance.");
+    return l_rtspServer;
+  }
+
+  l_rtspServer = (RTSPServer *)malloc(sizeof(RTSPServer));
+  if (l_rtspServer == NULL)
   {
     ESP_LOGE(TAG, "Failed to allocate memory for RTSPServer.");
     return NULL;
   }
-  memset(server, 0, sizeof(RTSPServer));
+  memset(l_rtspServer, 0, sizeof(RTSPServer));
 
-  server->msecPerFrame = 100; // default 10 fps
-  server->msecPerAudioFrame = 1000 / AUDIO_FRAME_FPS;
+  l_rtspServer->msecPerFrame = 100; // default 10 fps
+  l_rtspServer->msecPerAudioFrame = 1000 / AUDIO_FRAME_FPS;
 
-  snprintf(server->streamInfo.suffix, LEN_MAX_SUFFIX, "mjpeg/1");
-  rtspUpdateFrameSize(server);
+  snprintf(l_rtspServer->streamInfo.suffix, LEN_MAX_SUFFIX, "mjpeg/1");
+  rtspUpdateFrameSize(l_rtspServer);
 
-  return server;
+  return l_rtspServer;
+}
+
+RTSPServer *RTSPServer_GetInstance()
+{
+  return l_rtspServer;
 }
 
 static void RTSPServer_Stream(RTSPServer *rtspServer)
@@ -1160,10 +1181,14 @@ static void rtspServerTask(void *arg)
   }
 }
 
-bool RTSPServer_Start(RTSPServer *rtspServer, char *serverip, int port)
+
+bool RTSPServer_Start(RTSPServer *rtspServer, int port)
 {
+  char ip_str[16] = {0};
+  netLocalIP(ip_str, NULL, NULL);
+
   rtspServer->ServerPort = port;
-  snprintf(rtspServer->streamInfo.serverIP, LEN_MAX_IP, "%s", serverip);
+  snprintf(rtspServer->streamInfo.serverIP, LEN_MAX_IP, "%s", ip_str);
   snprintf(rtspServer->streamInfo.rtspURL, LEN_MAX_URL, "rtsp://%s:%u/%s", rtspServer->streamInfo.serverIP, rtspServer->ServerPort, rtspServer->streamInfo.suffix);
 
   rtspServer->tcpServer = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1242,6 +1267,8 @@ void RTSPServer_Destory(RTSPServer *rtspServer)
   {
     RTSPServer_Stop(rtspServer);
     free(rtspServer);
+    rtspServer = NULL;
+    l_rtspServer = NULL;
   }
 }
 

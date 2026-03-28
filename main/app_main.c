@@ -29,6 +29,7 @@
 #include "storage.h"
 #include "ha_mqtt_client.h"
 #include "WebServer.h"
+#include "paramCenter.h"
 
 /* The examples use WiFi configuration that you can set via project configuration menu
 
@@ -274,6 +275,42 @@ void save_picture_to_sdcard(void *pvParameters)
     }
 }
 
+/**
+ * @brief 启动RTSP服务器
+ */
+void start_rtsp_server(void)
+{
+    if (get_param_bool(CONFIG_RTSP_SERVER, RTSP_SERVER_ENABLE))
+    {
+        RTSPServer* server = RTSPServer_Create();
+        RTSPServer_Start(server, get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT));
+        char *user = get_param_string(CONFIG_RTSP_SERVER, RTSP_SERVER_USER);
+        char *password = get_param_string(CONFIG_RTSP_SERVER, RTSP_SERVER_PASSWORD);
+        if (strlen(user) > 0 && strlen(password) > 0)
+        {
+            RTSPServer_SetAuthAccount(server, user, password);
+        }
+        ESP_LOGI(TAG, "RTSP Server Started on port %d", get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT));
+    }
+}
+
+/**
+ * @brief 重启RTSP服务器（用于配置变更后）
+ */
+void restart_rtsp_server(void)
+{
+    // Stop existing server
+    RTSPServer* server = RTSPServer_GetInstance();
+    if (server != NULL)
+    {
+        RTSPServer_Destory(server);
+        ESP_LOGI(TAG, "RTSP Server stopped");
+    }
+
+    // Start with new config
+    start_rtsp_server();
+}
+
 void app_main(void)
 {
     // Initialize NVS
@@ -307,6 +344,12 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "SD Card Mounted Successfully");
 
+    if (!configCenterInit())
+    {
+        ESP_LOGE(TAG, "Config Center Init Failed");
+        return;
+    }
+
     if (ESP_OK != init_camera())
     {
         ESP_LOGE(TAG, "Camera Init Failed");
@@ -328,10 +371,7 @@ void app_main(void)
     web_server_start();
 
     // start rtsp server
-    char ip_str[16] = {0};
-    netLocalIP(ip_str, NULL, NULL);
-    RTSPServer *rtspServer = RTSPServer_Create();
-    RTSPServer_Start(rtspServer, ip_str, 554);
+    start_rtsp_server();
 
     xTaskCreate(save_picture_to_sdcard, "save_picture_to_sdcard", 8192, (void *)&(int){360000}, 5, &save_picture_to_sdcardHandle);
 

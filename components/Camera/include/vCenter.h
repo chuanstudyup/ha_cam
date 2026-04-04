@@ -12,6 +12,8 @@ typedef struct _video_node
     struct list_head list;
     unsigned int timestamp; // in ms
     pixformat_t format;
+    size_t width;
+    size_t height;
     size_t size;
     uint8_t *data;
     int ref_count;
@@ -22,7 +24,7 @@ void deinit_video_center(void);
 void pause_video_center(void);
 void resume_video_center(void);
 
-bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, uint8_t *data, size_t size);
+bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, size_t width, size_t height, uint8_t *data, size_t size);
 video_node *get_video_frame(unsigned int timestamp);
 video_node *get_latest_video_frame();
 void put_video_frame(video_node *node);

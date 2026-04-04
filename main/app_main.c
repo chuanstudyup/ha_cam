@@ -30,6 +30,7 @@
 #include "ha_mqtt_client.h"
 #include "WebServer.h"
 #include "paramCenter.h"
+#include "MotionDetect.h"
 
 /* The examples use WiFi configuration that you can set via project configuration menu
 
@@ -375,8 +376,10 @@ void app_main(void)
 
     xTaskCreate(save_picture_to_sdcard, "save_picture_to_sdcard", 8192, (void *)&(int){360000}, 5, &save_picture_to_sdcardHandle);
 
-    checkMemory("init complete");
+    startMotionDetectTask();
 
+    checkMemory("init complete");
+    
 #ifdef CONFIG_ENABLE_MQTT
     mqtt_app_start();
     int count = 0;

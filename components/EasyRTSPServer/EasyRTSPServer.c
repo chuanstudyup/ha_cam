@@ -1102,7 +1102,7 @@ static void rtspServerTask(void *arg)
 
   while (true)
   {
-    sleepTime = 5; // if has client connected, sleep for a short while
+    sleepTime = 40; // if has client connected, sleep for a short while
 
     client = accept(server->tcpServer, &addr, &addr_len);
     if (client > 0)

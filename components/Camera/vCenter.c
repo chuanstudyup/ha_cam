@@ -23,13 +23,14 @@ static void video_center_task(void *arg)
     camera_fb_t *pic = NULL;
     while (1)
     {
+        int fps = frameData[get_camera_frame_size()].defaultFPS;
         pic = esp_camera_fb_get();
         if (pic)
         {
-            put_vframe_to_center(pic->timestamp.tv_sec * 1000 + pic->timestamp.tv_usec / 1000, pic->format, pic->buf, pic->len);
+            put_vframe_to_center(pic->timestamp.tv_sec * 1000 + pic->timestamp.tv_usec / 1000, pic->format, pic->width, pic->height, pic->buf, pic->len);
             esp_camera_fb_return(pic);
         }
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(1000 / fps));
     }
 }
 
@@ -103,7 +104,7 @@ void deinit_video_center(void)
     }
 }
 
-bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, uint8_t *data, size_t size)
+bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, size_t width, size_t height, uint8_t *data, size_t size)
 {
     struct list_head *pos;
     video_node *node = NULL;
@@ -147,6 +148,8 @@ bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, uint8_t *d
     node->format = format;
     node->size = size;
     node->timestamp = timestamp;
+    node->width = width;
+    node->height = height;
 
     // 3. add node to the end of the list
     list_add_tail(&node->list, &l_v_center.video_list);

@@ -11,7 +11,6 @@
 #include "cam_info.h"
 #include "Camera.h"
 #include "ChipInfo.h"
-#include "paramCenter.h"
 #include "vCenter.h"
 #include "esp_jpeg_dec.h"
 
@@ -34,14 +33,14 @@ static const int resizeDimLen = RESIZE_DIM_LEN;
 #define DETECT_NIGHT_FRAMES 10 // frames of sequential darkness to avoid spurious day / night switching
 
 // 运动检测相关参数
-#define DETECT_MOTION_FRAMES 5     // 连续帧数检测到运动才认为有运动
+#define DETECT_MOTION_FRAMES 3     // 连续帧数检测到运动才认为有运动
 #define DETECT_NUM_BANDS 10      // 检测区域划分成几个部分，划分成10部分（10行），则每部分的像素数为RESIZE_DIM*RESIZE_DIM/detectNumBands
 #define DETECT_START_BAND 1        // 检测区域起始行，从1开始计数，1表示最顶部，10表示最底部
 #define DETECT_END_BAND 9          // 检测区域结束行，从1开始计数
 #define DETECT_CHANGE_THRESHOLD 15 // 像素变化阈值，大于此值认为是运动
 
-bool useMotion = true;          // 是否使用摄像头进行运动检测
-float motionVal = 8.0;          // 运动检测灵敏度，数值越大越敏感
+static bool useMotion = false;          // 是否使用摄像头进行运动检测
+static uint8_t motionVal = 8;          // 运动检测灵敏度，数值越大越敏感
 
 static uint8_t *prevBuff = NULL;
 
@@ -73,6 +72,47 @@ bool getNightStatus()
 void setNightSwitch(uint8_t nightSwitch)
 {
   l_nightSwitch = nightSwitch;
+}
+
+uint8_t getNightSwitch()
+{
+  return l_nightSwitch;
+}
+
+/* 设置运动检测灵敏度 */
+void setDetectSensitivity(uint8_t sensitivity)
+{
+  motionVal = sensitivity;
+}
+
+/* 获取运动检测灵敏度 */
+uint8_t getDetectSensitivity()
+{
+  return motionVal;
+}
+
+/* 获取是否启用运动检测 */
+bool getMotionDetectStatus()
+{
+  return useMotion;
+}
+
+/* 更改运动检测状态 */
+void changeMotionDetectStatus(bool status)
+{
+  if (status == useMotion)
+  {
+    return;
+  }
+  if (status)
+  {
+    startMotionDetectTask();
+  }
+  else
+  {
+    stopMotionDetectTask();
+  }
+  useMotion = status;
 }
 
 /* 亮度检测函数 */
@@ -433,16 +473,13 @@ static TaskHandle_t md_task_handle = NULL;
 
 void startMotionDetectTask()
 {
-  useMotion = get_param_bool(CONFIG_MOTION, MD_ENABLE);
-  ESP_LOGI(TAG, "Motion Detect %s", useMotion ? "enabled" : "disabled");
-  if (!useMotion)
-    return;
   if (md_task_handle)
   {
     ESP_LOGW(TAG, "Motion Detect Task already running");
     return;
   }
   xTaskCreate(motionDetectTask, "motionDetect", 4096, NULL, 1, &md_task_handle);
+  ESP_LOGI(TAG, "Starting Motion Detect Task");
 }
 
 void stopMotionDetectTask()
@@ -451,5 +488,7 @@ void stopMotionDetectTask()
   {
     vTaskDelete(md_task_handle);
     md_task_handle = NULL;
+    ESP_LOGI(TAG, "Stopping Motion Detect Task");
+    return;
   }
 }

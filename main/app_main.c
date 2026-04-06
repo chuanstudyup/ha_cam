@@ -376,7 +376,10 @@ void app_main(void)
 
     xTaskCreate(save_picture_to_sdcard, "save_picture_to_sdcard", 8192, (void *)&(int){360000}, 5, &save_picture_to_sdcardHandle);
 
-    startMotionDetectTask();
+    // 初始化运动检测
+    setNightSwitch(get_param_uint8(CONFIG_MOTION, MD_NIGHT_SWITCH));
+    setDetectSensitivity(get_param_uint8(CONFIG_MOTION, MD_SENSITIVITY));
+    changeMotionDetectStatus(get_param_bool(CONFIG_MOTION, MD_ENABLE));
 
     checkMemory("init complete");
     

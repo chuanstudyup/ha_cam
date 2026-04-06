@@ -20,6 +20,21 @@ bool getNightStatus();
 /* 设置日夜检测阈值 */
 void setNightSwitch(uint8_t nightSwitch);
 
+/* 获取日夜检测阈值 */
+uint8_t getNightSwitch();
+
+/* 设置运动检测灵敏度 */
+void setDetectSensitivity(uint8_t sensitivity);
+
+/* 获取运动检测灵敏度 */
+uint8_t getDetectSensitivity();
+
+/* 获取是否启用运动检测 */
+bool getMotionDetectStatus();
+
+/* 更改运动检测状态 */
+void changeMotionDetectStatus(bool status);
+
 /**
  * @brief 检测图像中的运动
  * 

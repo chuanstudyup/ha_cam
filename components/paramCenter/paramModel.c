@@ -31,28 +31,24 @@ static RANGE night_switch_range = {0, 100};
 static RANGE rtsp_port_range = {554, 65535};
 
 static PARAM_DEF MOTION_DETECT_PARAM[] = {
-    {"Motion Detect", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
-    {"Motion Sensitivity", PARAM_TYPE_UINT8, {.u8 = 7}, rangeCheck, &sen_range, 0},
-    {"Min Seconds", PARAM_TYPE_INT32, {.i32 = 3}, rangeCheck, &min_seconds_range, 0},
-    {"Save Capture", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
-    {"Show Motion", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
-    {"Night Switch", PARAM_TYPE_UINT8, {.u8 = 10}, rangeCheck, &night_switch_range, 0},
-    {"TestString", PARAM_TYPE_STRING, {.str = "TestString"}, NULL, NULL, 32},
+    {"enable", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
+    {"sensitivity", PARAM_TYPE_UINT8, {.u8 = 7}, rangeCheck, &sen_range, 0},
+    {"night_switch", PARAM_TYPE_UINT8, {.u8 = 10}, rangeCheck, &night_switch_range, 0},
 };
 
 static PARAM_DEF STORAGE_PARAM[] = {
-    {"Auto Upload", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
-    {"Auto Delete", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
+    {"auto_upload", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
+    {"auto_delete", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
 };
 
 static PARAM_DEF RTSP_SERVER_PARAM[] = {
-    {"Enable", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
-    {"User", PARAM_TYPE_STRING, {.str = ""}, NULL, NULL, 32},
-    {"Password", PARAM_TYPE_STRING, {.str = ""}, NULL, NULL, 32},
-    {"Port", PARAM_TYPE_INT32, {.i32 = 554}, rangeCheck, &rtsp_port_range, 0},
+    {"enable", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
+    {"user", PARAM_TYPE_STRING, {.str = ""}, NULL, NULL, 32},
+    {"password", PARAM_TYPE_STRING, {.str = ""}, NULL, NULL, 32},
+    {"port", PARAM_TYPE_INT32, {.i32 = 554}, rangeCheck, &rtsp_port_range, 0},
 };
 
 CONFIG_CENTER config[] = {
-    {"Motion Detect", MOTION_DETECT_PARAM, sizeof(MOTION_DETECT_PARAM) / sizeof(PARAM_DEF)},
-    {"Storage", STORAGE_PARAM, sizeof(STORAGE_PARAM) / sizeof(PARAM_DEF)},
+    {"motion_detect", MOTION_DETECT_PARAM, sizeof(MOTION_DETECT_PARAM) / sizeof(PARAM_DEF)},
+    {"storage", STORAGE_PARAM, sizeof(STORAGE_PARAM) / sizeof(PARAM_DEF)},
     {"rtsp", RTSP_SERVER_PARAM, sizeof(RTSP_SERVER_PARAM) / sizeof(PARAM_DEF)}};

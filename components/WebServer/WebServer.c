@@ -32,6 +32,7 @@
 #include "WebServer.h"
 #include "Utils.h"
 #include "paramCenter.h"
+#include "MotionDetect.h"
 
 static const char *TAG = "WebServer";
 
@@ -263,7 +264,6 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
                 if (rtsp_json)
                 {
                     char *json_str = cJSON_PrintUnformatted(rtsp_json);
-                    cJSON_Delete(rtsp_json);
                     if (json_str)
                     {
                         httpd_resp_set_type(req, "application/json");
@@ -271,6 +271,24 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
                         free(json_str);
                         return ESP_OK;
                     }
+                    cJSON_Delete(rtsp_json);
+                }
+            }
+            else if (strcmp(param, "motion_detect") == 0)
+            {
+                cJSON *motion_json = get_module_json_str(CONFIG_MOTION);
+                if (motion_json)
+                {
+                    // get_module_json_str 返回的格式已经是 {"motion_detect":{...}}
+                    char *json_str = cJSON_PrintUnformatted(motion_json);
+                    if (json_str)
+                    {
+                        httpd_resp_set_type(req, "application/json");
+                        httpd_resp_send(req, json_str, strlen(json_str));
+                        free(json_str);
+                        return ESP_OK;
+                    }
+                    cJSON_Delete(motion_json);
                 }
             }
         }
@@ -374,6 +392,53 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
                     save_config(CONFIG_RTSP_SERVER);
                     restart_rtsp_server();
                     ESP_LOGI(TAG, "RTSP config saved and server restarted");
+                }
+            }
+            else if (strcmp(cfg_type, "motion_detect") == 0)
+            {
+                // 保存移动侦测配置
+                cJSON *motion = cJSON_GetObjectItem(config_json, "motion_detect");
+                if (motion)
+                {
+                    cJSON *enable = cJSON_GetObjectItem(motion, "enable");
+                    cJSON *sensitivity = cJSON_GetObjectItem(motion, "sensitivity");
+                    cJSON *night_switch = cJSON_GetObjectItem(motion, "night_switch");
+
+                    if (enable && cJSON_IsBool(enable))
+                    {
+                        bool en = cJSON_IsTrue(enable);
+                        if (en != get_param_bool(CONFIG_MOTION, MD_ENABLE))
+                        {
+                            ESP_LOGI(TAG, "Motion detect enable changed: %s -> %s", get_param_bool(CONFIG_MOTION, MD_ENABLE) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_MOTION, MD_ENABLE, en, false);
+                            changeMotionDetectStatus(en);
+                        }
+                    }
+
+                    if (sensitivity && cJSON_IsNumber(sensitivity))
+                    {
+                        uint8_t sen_val = (uint8_t)sensitivity->valueint;
+                        if (sen_val != get_param_uint8(CONFIG_MOTION, MD_SENSITIVITY))
+                        {
+                            ESP_LOGI(TAG, "Motion sensitivity changed: %d -> %d", get_param_uint8(CONFIG_MOTION, MD_SENSITIVITY), sen_val);
+                            set_param_uint8(CONFIG_MOTION, MD_SENSITIVITY, sen_val, false);
+                            setDetectSensitivity(sen_val);
+                        }
+                    }
+
+                    if (night_switch && cJSON_IsNumber(night_switch))
+                    {
+                        uint8_t night_val = (uint8_t)night_switch->valueint;
+                        if (night_val != get_param_uint8(CONFIG_MOTION, MD_NIGHT_SWITCH))
+                        {
+                            ESP_LOGI(TAG, "Night switch threshold changed: %d -> %d", get_param_uint8(CONFIG_MOTION, MD_NIGHT_SWITCH), night_val);
+                            set_param_uint8(CONFIG_MOTION, MD_NIGHT_SWITCH, night_val, false);
+                            setNightSwitch(night_val);
+                        }
+                    }
+
+                    save_config(CONFIG_MOTION);
+                    ESP_LOGI(TAG, "Motion detect config saved");
                 }
             }
             else

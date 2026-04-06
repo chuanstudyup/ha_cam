@@ -410,7 +410,34 @@
                     </div>
                 </div>
 
-                <!-- 后续新增的配置面板将放在这里 -->
+                <!-- Motion Detect 配置面板 -->
+                <div class="config-panel">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <span>Motion Detect</span>
+                        <span class="arrow">&#9654;</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="panel-inner">
+                            <form class="config-form" id="motionForm">
+                                <div>
+                                    <label for="motionEnable">Enable:</label>
+                                    <select id="motionEnable" name="motionEnable">
+                                        <option value="0">Off</option>
+                                        <option value="1">On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="motionSensitivity">Sensitivity (1-10):</label>
+                                    <input type="number" id="motionSensitivity" name="motionSensitivity" min="1" max="10" value="7">
+                                </div>
+                                <div>
+                                    <label for="motionNightSwitch">Night Switch (0-100):</label>
+                                    <input type="number" id="motionNightSwitch" name="motionNightSwitch" min="0" max="100" value="10">
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
 
             </div>
 
@@ -461,6 +488,12 @@
                 const rtspForm = panel.querySelector('#rtspForm');
                 if (rtspForm) {
                     loadRtspConfig();
+                }
+
+                // 检查是否是 Motion Detect 面板
+                const motionForm = panel.querySelector('#motionForm');
+                if (motionForm) {
+                    loadMotionConfig();
                 }
             }
         }
@@ -586,6 +619,7 @@
 
             if (expandedPanel) {
                 const rtspForm = expandedPanel.querySelector('#rtspForm');
+                const motionForm = expandedPanel.querySelector('#motionForm');
                 if (rtspForm) {
                     // RTSP 面板展开，保存 RTSP 配置
                     cfgType = 'rtsp';
@@ -595,6 +629,16 @@
                             port: parseInt(document.getElementById('rtspPort').value, 10),
                             user: document.getElementById('rtspUser').value,
                             password: document.getElementById('rtspPassword').value
+                        }
+                    };
+                } else if (motionForm) {
+                    // Motion Detect 面板展开，保存移动侦测配置
+                    cfgType = 'motion_detect';
+                    configData = {
+                        motion_detect: {
+                            enable: document.getElementById('motionEnable').value === '1',
+                            sensitivity: parseInt(document.getElementById('motionSensitivity').value, 10),
+                            night_switch: parseInt(document.getElementById('motionNightSwitch').value, 10)
                         }
                     };
                 } else {
@@ -674,26 +718,49 @@
                 .then(response => response.json())
                 .then(config => {
                     console.log('Loaded RTSP config:', config);
-                    // 返回的 JSON 格式是 {"rtsp":{"Enable":true,"Port":554,...}}
+                    // 返回的 JSON 格式是 {"rtsp":{"enable":true,"port":554,...}}
                     const rtsp = config.rtsp || config;
-                    if (rtsp.Enable !== undefined) {
-                        document.getElementById('rtspEnable').value = rtsp.Enable ? '1' : '0';
+                    if (rtsp.enable !== undefined) {
+                        document.getElementById('rtspEnable').value = rtsp.enable ? '1' : '0';
                     }
-                    if (rtsp.Port !== undefined) {
-                        document.getElementById('rtspPort').value = rtsp.Port;
+                    if (rtsp.port !== undefined) {
+                        document.getElementById('rtspPort').value = rtsp.port;
                     }
-                    if (rtsp.User !== undefined) {
-                        document.getElementById('rtspUser').value = rtsp.User;
+                    if (rtsp.user !== undefined) {
+                        document.getElementById('rtspUser').value = rtsp.user;
                     }
-                    if (rtsp.Password !== undefined) {
-                        document.getElementById('rtspPassword').value = rtsp.Password;
+                    if (rtsp.password !== undefined) {
+                        document.getElementById('rtspPassword').value = rtsp.password;
                     }
                 })
                 .catch(error => {
                     console.error('Failed to load RTSP config:', error);
                 });
         }
-        
+
+        // 加载 Motion Detect 配置
+        function loadMotionConfig() {
+            fetch('/config?cfg=motion_detect')
+                .then(response => response.json())
+                .then(config => {
+                    console.log('Loaded Motion Detect config:', config);
+                    // 返回的 JSON 格式是 {"motion_detect":{"enable":true,"sensitivity":7,"night_switch":10}}
+                    const motion = config.motion_detect || config;
+                    if (motion.enable !== undefined) {
+                        document.getElementById('motionEnable').value = motion.enable ? '1' : '0';
+                    }
+                    if (motion.sensitivity !== undefined) {
+                        document.getElementById('motionSensitivity').value = motion.sensitivity;
+                    }
+                    if (motion.night_switch !== undefined) {
+                        document.getElementById('motionNightSwitch').value = motion.night_switch;
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to load Motion Detect config:', error);
+                });
+        }
+
         // 根据视频实际播放状态更新按钮
         function updateButtonStates() {
             const startBtn = document.querySelector('button[onclick="startStream()"]');

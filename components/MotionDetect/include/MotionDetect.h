@@ -35,6 +35,9 @@ bool getMotionDetectStatus();
 /* 更改运动检测状态 */
 void changeMotionDetectStatus(bool status);
 
+/* 获取画面是否静止 */
+bool getStillStatus();
+
 /**
  * @brief 检测图像中的运动
  * 

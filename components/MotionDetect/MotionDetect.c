@@ -49,6 +49,9 @@ static uint8_t l_cur_luma = 0;     // current luma value
 static uint8_t l_nightSwitch = 20; // luma threshold for night time detection
 static bool nightTime = false;
 
+/* 是否画面静止，经对比前后两帧 */
+static bool l_still = false;
+
 /**
  * @brief 获取当前亮度值
  *
@@ -95,6 +98,12 @@ uint8_t getDetectSensitivity()
 bool getMotionDetectStatus()
 {
   return useMotion;
+}
+
+/* 获取画面是否静止 */
+bool getStillStatus()
+{
+  return l_still;
 }
 
 /* 更改运动检测状态 */
@@ -408,10 +417,12 @@ bool checkMotion(bool motionStatus)
       ESP_LOGI(TAG, "***** Motion - START");
       motionStatus = true; // motion started
     }
+    l_still = false;
   }
   else
   {
     motionCnt = 0;
+    l_still = true;
   }
 
   if (motionStatus && !motionCnt)

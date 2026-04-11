@@ -149,6 +149,10 @@ static esp_err_t jpg_stream_httpd_handler(httpd_req_t *req)
         {
             ESP_LOGI(TAG, "MJPG: %.2ffps %.2fKbps", avg_fps, avg_bandwidth);
         }
+        if (getStillStatus())
+        {
+            vTaskDelay(800 / portTICK_PERIOD_MS); // If still, reduce streaming frequency to save resources
+        }
         vTaskDelay(40 / portTICK_PERIOD_MS);
     }
 

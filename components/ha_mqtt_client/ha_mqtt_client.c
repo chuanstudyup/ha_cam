@@ -18,6 +18,8 @@
 
 static uint8_t l_mac[6] = {0};
 static esp_mqtt_client_handle_t l_client = NULL;
+static char unique_id[32] = {0};
+
 static void log_error_if_nonzero(const char *message, int error_code)
 {
     if (error_code != 0)
@@ -30,13 +32,15 @@ static void log_error_if_nonzero(const char *message, int error_code)
 // 发布到主题：homeassistant/sensor/hum_sensor/config
 void mqtt_broadcast_discovery()
 {
-    int msg_id;
+   
+    char *payload = "{\"topic\":\"homeassistant/camera/%s/jpeg\",\"unique_id\":\"%s\",\"device\":{\"identifiers\":[\"ESPCamera\"],\"name\":\"Camera\"}}"
+    char payload_buf[256] = {0};
+    char topic[64] = {0};
 
-    //char *cam_paylioad = "{\"topic\":\"homeassistant/camera/bedroomCamera/jpeg\",\"image_encoding \":\"b64\",\"unique_id\":\"cam01ae\",\"device\":{\"identifiers\":[\"bedroomCamera\"],\"name\":\"Camera\"}}";
-    char *cam_paylioad = "{\"topic\":\"homeassistant/camera/bedroomCamera/jpeg\",\"unique_id\":\"cam01ae\",\"device\":{\"identifiers\":[\"bedroomCamera\"],\"name\":\"Camera\"}}";
-    msg_id = esp_mqtt_client_publish(l_client,
-                                     "homeassistant/camera/cam0123/config",
-                                     cam_paylioad, 0, 1, 0);
+    snprintf(topic, sizeof(topic), "homeassistant/camera/%s/config", unique_id);
+    snprintf(payload_buf, sizeof(payload_buf), payload, unique_id, unique_id);
+    int msg_id = esp_mqtt_client_publish(l_client, topic, payload_buf, 0, 1, 0);
+
     ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
 }
 
@@ -44,11 +48,15 @@ void mqtt_publish_data()
 {
     size_t _jpg_buf_len = 0;
     uint8_t *_jpg_buf = NULL;
-    video_node *node = get_latest_video_frame();
     int width = 0, height = 0;
     get_camera_frame_dimension(&width, &height);
     int64_t t1 = esp_timer_get_time();
+    char topic[64] = {0};
 
+    snprintf(topic, sizeof(topic), "homeassistant/camera/%s/jpeg", unique_id);
+
+
+    video_node *node = get_latest_video_frame();
     if (!node)
     {
         ESP_LOGE(TAG, "Camera capture failed");
@@ -70,7 +78,7 @@ void mqtt_publish_data()
         _jpg_buf = node->data;
     }
 
-    int msg_id = esp_mqtt_client_publish(l_client, "homeassistant/camera/bedroomCamera/jpeg", (const char *)_jpg_buf, _jpg_buf_len, 1, 0);
+    int msg_id = esp_mqtt_client_publish(l_client, topic, (const char *)_jpg_buf, _jpg_buf_len, 1, 0);
 
     put_video_frame(node);
     if (node->format != PIXFORMAT_JPEG)
@@ -143,9 +151,11 @@ void mqtt_app_start()
     }
 
     char username[32] = {0};
-    snprintf(username, sizeof(username), "sensor_%02X%02X", l_mac[4], l_mac[5]);
+    snprintf(username, sizeof(username), "camera_%02X%02X", l_mac[4], l_mac[5]);
     char client_id[32] = {0};
-    snprintf(client_id, sizeof(username), "esp_sensor_%02X%02X", l_mac[4], l_mac[5]);
+    snprintf(client_id, sizeof(client_id), "esp_camera_%02X%02X", l_mac[4], l_mac[5]);
+
+    snprintf(unique_id, sizeof(unique_id), "cam%02X%02X", l_mac[4], l_mac[5]);
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.hostname = EXAMPLE_ESP_MQTT_HOST,

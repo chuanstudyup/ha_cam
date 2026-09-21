@@ -20,9 +20,9 @@
 
 static const char *TAG = "Storage";
 
-#define SDMMC_PIN_CLK GPIO_NUM_36
-#define SDMMC_PIN_CMD GPIO_NUM_35
-#define SDMMC_PIN_D0 GPIO_NUM_37
+#define SDMMC_PIN_CLK GPIO_NUM_39
+#define SDMMC_PIN_CMD GPIO_NUM_38
+#define SDMMC_PIN_D0 GPIO_NUM_40
 
 static sdmmc_card_t *card = NULL;
 

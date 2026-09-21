@@ -103,6 +103,16 @@ void deleteFolderOrFile(const char *deleteThis);
 bool checkFreeStorage();
 
 /**
+ * @brief 格式化存储（删除用户数据）
+ *
+ * 该函数会删除挂载点下的用户数据（保留系统/数据目录等受保护项）。
+ *
+ * @return true 成功
+ * @return false 失败
+ */
+bool formatStorage(void);
+
+/**
  * @brief 列出指定目录下的所有文件和子目录
  *
  * 遍历指定目录，递归列出所有文件和子目录，并显示文件大小信息。

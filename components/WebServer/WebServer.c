@@ -1154,6 +1154,37 @@ static esp_err_t storage_info_handler(httpd_req_t *req)
 }
 
 /**
+ * @brief 格式化存储（HTTP 接口）
+ * POST /api/storage/format
+ */
+static esp_err_t storage_format_handler(httpd_req_t *req)
+{
+    bool res = formatStorage();
+
+    cJSON *root = cJSON_CreateObject();
+    if (res)
+    {
+        cJSON_AddBoolToObject(root, "success", true);
+        cJSON_AddStringToObject(root, "message", "Storage formatted (wiped) successfully");
+        ESP_LOGI(TAG, "Storage formatted via HTTP request");
+    }
+    else
+    {
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "message", "Failed to format storage");
+        ESP_LOGE(TAG, "Storage format failed via HTTP request");
+    }
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(root);
+    free(json_str);
+    return ESP_OK;
+}
+
+/**
  * @brief HTTP通用处理函数
  * 负责分发请求到对应的sustain任务
  */
@@ -1327,6 +1358,12 @@ httpd_handle_t web_server_start(void)
         .handler = storage_info_handler,
         .user_ctx = NULL};
 
+    httpd_uri_t api_storage_format = {
+        .uri = "/api/storage/format",
+        .method = HTTP_POST,
+        .handler = storage_format_handler,
+        .user_ctx = NULL};
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK)
     {
         httpd_register_uri_handler(stream_httpd, &uri_get);
@@ -1345,6 +1382,7 @@ httpd_handle_t web_server_start(void)
         httpd_register_uri_handler(stream_httpd, &api_files_delete);
         httpd_register_uri_handler(stream_httpd, &api_files_mkdir);
         httpd_register_uri_handler(stream_httpd, &api_storage_info);
+        httpd_register_uri_handler(stream_httpd, &api_storage_format);
 
         start_sustainTasks();
 

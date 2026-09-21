@@ -316,6 +316,7 @@
             <button class="btn-primary" id="btn-delete-selected" onclick="deleteSelected()" disabled>Delete Selected</button>
             <button class="btn-secondary" onclick="showMkdirModal()">Create Folder</button>
             <button class="btn-secondary" onclick="refreshFiles()">Refresh</button>
+            <button class="btn-secondary" id="btn-format" onclick="formatStorage()">Format</button>
         </div>
 
         <div class="path-bar">
@@ -615,6 +616,32 @@
         function refreshFiles() {
             loadFileList(currentPath);
             loadStorageInfo();
+        }
+
+        // Format storage (wipe user data)
+        function formatStorage() {
+            if (!confirm('Are you sure you want to format storage? This will delete all user data and cannot be undone.')) return;
+            const btn = document.getElementById('btn-format');
+            btn.disabled = true;
+
+            fetch('/api/storage/format', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => { throw new Error(text || 'Server error'); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                showStatus(data.message, data.success ? 'success' : 'error');
+                loadFileList('/sdcard');
+                loadStorageInfo();
+            })
+            .catch(error => {
+                showStatus('Format failed: ' + error.message, 'error');
+            })
+            .finally(() => { btn.disabled = false; });
         }
 
         // Show status message

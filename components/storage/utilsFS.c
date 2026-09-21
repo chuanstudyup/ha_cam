@@ -560,3 +560,40 @@ uint32_t getSDFreeSpace(void)
   uint32_t free = (fs->csize * fre_clust * fs->ssize) / 1024; // in KB
   return free;
 }
+
+/**
+ * @brief 格式化存储（删除用户数据）
+ *
+ * 遍历挂载点下的顶层条目，删除除了系统和数据目录之外的所有文件与文件夹。
+ * 这不是低级别的文件系统重新格式化，而是清空用户空间的实现。
+ */
+bool formatStorage(void)
+{
+  DIR *dir = opendir(SD_MOUNT_POINT);
+  if (dir == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to open mount point %s for formatting", SD_MOUNT_POINT);
+    return false;
+  }
+
+  struct dirent *entry;
+  char target[FILE_NAME_LEN];
+
+  while ((entry = readdir(dir)) != NULL)
+  {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+      continue;
+
+    // Skip protected/system folders
+    if (strstr(entry->d_name, "System") != NULL || strstr(entry->d_name, DATA_DIR) != NULL)
+      continue;
+
+    snprintf(target, FILE_NAME_LEN, "%s/%s", SD_MOUNT_POINT, entry->d_name);
+    ESP_LOGI(TAG, "Formatting: removing %s", target);
+    deleteFolderOrFile(target);
+  }
+
+  closedir(dir);
+  ESP_LOGI(TAG, "Storage format (wipe) completed");
+  return true;
+}

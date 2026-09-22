@@ -15,6 +15,8 @@
 #include "Camera.h"
 #include "ChipInfo.h"
 #include "Utils.h"
+#include "paramCenter.h"
+#include "vCenter.h"
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -240,7 +242,7 @@ bool openAvi()
   // derive filename from date & time, store in date folder
   // time to open a new file on SD increases with the number of files already present
   oTime = esp_timer_get_time() / 1000;
-  dateFormat(partName, sizeof(partName), true);
+  dateFormat(partName, sizeof(partName), true, NULL);
   if (access(partName, F_OK) != 0)
   {
     if (mkdir(partName, 0777) != 0)
@@ -253,7 +255,7 @@ bool openAvi()
       ESP_LOGI(TAG, "Created folder: %s", partName);
     }
   }
-  dateFormat(partName, sizeof(partName), false);
+  dateFormat(partName, sizeof(partName), false, NULL);
   // open avi file with temporary name
   aviFile = fopen(AVITEMP, "wb+");
   if (aviFile == NULL)
@@ -443,7 +445,7 @@ bool closeAvi(char *fileName)
       if (deleteAfter)
       {
         // issue #380 - in case other files failed to transfer, do whole parent folder
-        dateFormat(partName, sizeof(partName), true);
+        dateFormat(partName, sizeof(partName), true, NULL);
         fsStartTransfer(partName);
       }
       else
@@ -725,4 +727,100 @@ bool storageInit()
 void storageSetFPS(uint8_t fps)
 {
   l_FPS = fps;
+}
+
+/************   Timed Picture Capture ***********************/
+static TaskHandle_t timedCaptureHandle = NULL;
+
+static void timedCaptureTask(void *pvParameters)
+{
+    char folder_name[64] = {0};
+    char file_name[128] = {0};
+    int64_t tm1 = 0, tm2 = 0;
+
+    while (1)
+    {
+        if (!get_param_bool(CONFIG_STORAGE, STORAGE_ENABLE))
+        {
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
+        int period = get_param_int32(CONFIG_STORAGE, STORAGE_INTERVAL) * 1000;
+        if (period < 10000) period = 10000;
+
+        tm1 = esp_timer_get_time();
+
+        dateFormat(folder_name, sizeof(folder_name), true, "ontime");
+        if (access(folder_name, F_OK) != 0)
+        {
+            if (mkdir(folder_name, 0777) != 0)
+            {
+                ESP_LOGE(TAG, "Failed to create date folder");
+                vTaskDelay(period / portTICK_PERIOD_MS);
+                continue;
+            }
+            ESP_LOGI(TAG, "Created folder: %s", folder_name);
+        }
+
+        dateFormat(file_name, sizeof(file_name), false, "ontime");
+        strcat(file_name, ".jpg");
+
+        video_node *node = get_latest_video_frame();
+        if (!node)
+        {
+            ESP_LOGE(TAG, "Failed to get video frame");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
+        FILE *f = fopen(file_name, "wb");
+        if (f == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to open file: %s", file_name);
+            put_video_frame(node);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        fwrite(node->data, 1, node->size, f);
+        fclose(f);
+        put_video_frame(node);
+        tm2 = esp_timer_get_time();
+
+        ESP_LOGI(TAG, "Saved picture: %s, time: %lld ms", file_name, (tm2 - tm1) / 1000);
+        vTaskDelay(period / portTICK_PERIOD_MS);
+    }
+}
+
+bool storage_timed_capture_start(void)
+{
+    if (timedCaptureHandle != NULL)
+    {
+        ESP_LOGW(TAG, "Timed capture task already running");
+        return true;
+    }
+    BaseType_t ret = xTaskCreate(timedCaptureTask, "timed_capture", 8192, NULL, 5, &timedCaptureHandle);
+    if (ret != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create timed capture task");
+        timedCaptureHandle = NULL;
+        return false;
+    }
+    ESP_LOGI(TAG, "Timed capture task started");
+    return true;
+}
+
+void storage_timed_capture_stop(void)
+{
+    if (timedCaptureHandle != NULL)
+    {
+        vTaskDelete(timedCaptureHandle);
+        timedCaptureHandle = NULL;
+        ESP_LOGI(TAG, "Timed capture task stopped");
+    }
+}
+
+bool storage_timed_capture_is_running(void)
+{
+    return (timedCaptureHandle != NULL);
 }

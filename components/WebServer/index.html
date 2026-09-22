@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 CAM Control Panel</title>
-    <!-- CSS 样式 -->
+    <!-- CSS Styles -->
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -195,7 +195,7 @@
                 min-width: 100px;
             }
         }
-        /* 折叠面板样式 */
+        /* Accordion panel styles */
         .config-panel {
             border: 1px solid #ddd;
             border-radius: 6px;
@@ -239,7 +239,7 @@
     <div class="container">
         <h1>ESP32 CAM Control Panel</h1>
         
-        <!-- 顶部控制按钮 -->
+        <!-- Top control buttons -->
         <div class="top-controls">
             <button onclick="startStream()">Start Stream</button>
             <button onclick="stopStream()">Stop Stream</button>
@@ -249,7 +249,7 @@
         </div>
         
         <div class="main-container">
-            <!-- 左侧配置区域 -->
+            <!-- Left config section -->
             <div class="config-section">
                 <h2>Camera Configuration</h2>
                 <div class="config-controls">
@@ -257,7 +257,7 @@
                     <button onclick="saveConfig()">Save Config</button>
                 </div>
 
-                <!-- 图像配置面板 (默认展开) -->
+                <!-- Image config panel (expanded by default) -->
                 <div class="config-panel expanded">
                     <div class="panel-header" onclick="togglePanel(this)">
                         <span>Image</span>
@@ -292,7 +292,7 @@
                                     <label for="sharpness">Sharpness (-2 to 2):</label>
                                     <input type="number" id="sharpness" name="sharpness" min="-2" max="2" value="0">
                                 </div>
-                                <!-- 新增配置 -->
+                                <!-- Additional settings -->
                                 <div>
                                     <label for="aec">Auto Exposure:</label>
                                     <select id="aec" name="aec">
@@ -377,7 +377,7 @@
                     </div>
                 </div>
 
-                <!-- RTSP Server 配置面板 -->
+                <!-- RTSP Server config panel -->
                 <div class="config-panel">
                     <div class="panel-header" onclick="togglePanel(this)">
                         <span>RTSP Server</span>
@@ -410,7 +410,7 @@
                     </div>
                 </div>
 
-                <!-- Motion Detect 配置面板 -->
+                <!-- Motion Detect config panel -->
                 <div class="config-panel">
                     <div class="panel-header" onclick="togglePanel(this)">
                         <span>Motion Detect</span>
@@ -439,11 +439,50 @@
                     </div>
                 </div>
 
+                <!-- Storage config panel -->
+                <div class="config-panel">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <span>Storage</span>
+                        <span class="arrow">&#9654;</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="panel-inner">
+                            <form class="config-form" id="storageForm">
+                                <div>
+                                    <label for="storageTimedCapture">Timed Capture:</label>
+                                    <select id="storageTimedCapture" name="storageTimedCapture">
+                                        <option value="0">Off</option>
+                                        <option value="1">On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="storageInterval">Interval (sec, 10-3600):</label>
+                                    <input type="number" id="storageInterval" name="storageInterval" min="10" max="3600" value="360">
+                                </div>
+                                <div>
+                                    <label for="storageAutoUpload">Auto Upload:</label>
+                                    <select id="storageAutoUpload" name="storageAutoUpload">
+                                        <option value="0">Off</option>
+                                        <option value="1">On</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="storageAutoDelete">Auto Delete:</label>
+                                    <select id="storageAutoDelete" name="storageAutoDelete">
+                                        <option value="0">Off</option>
+                                        <option value="1">On</option>
+                                    </select>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
-            <!-- 右侧媒体区域 -->
+            <!-- Right media section -->
             <div class="media-section">
-                <!-- 视频/图像显示容器 -->
+                <!-- Video/Image display container -->
                 <div class="media-container" id="streamContainer">
                     <h3>Live Stream</h3>
                     <div class="video-container">
@@ -452,7 +491,7 @@
                     </div>
                 </div>
 
-                <!-- 抓拍的图片显示区域 -->
+                <!-- Captured image display area -->
                 <div class="media-container" id="snapshotContainer" style="display: none;">
                     <h3>Captured Image</h3>
                     <div class="video-container">
@@ -464,54 +503,60 @@
         </div>
     </div>
 
-    <!-- JavaScript 功能 -->
+    <!-- JavaScript -->
     <script>
         let streamInterval;
         const streamElement = document.getElementById('stream');
         const snapshotElement = document.getElementById('snapshot');
 
-        // 折叠面板切换函数 (手风琴效果)
+        // Accordion panel toggle
         function togglePanel(header) {
             const panel = header.parentElement;
             const isExpanded = panel.classList.contains('expanded');
 
-            // 收起所有其他容器
+            // Collapse all other panels
             document.querySelectorAll('.config-panel').forEach(p => {
                 p.classList.remove('expanded');
             });
 
-            // 如果之前是收起状态，则展开当前容器
+            // Expand current panel if it was collapsed
             if (!isExpanded) {
                 panel.classList.add('expanded');
 
-                // 检查是否是 RTSP Server 面板
+                // Check if RTSP Server panel
                 const rtspForm = panel.querySelector('#rtspForm');
                 if (rtspForm) {
                     loadRtspConfig();
                 }
 
-                // 检查是否是 Motion Detect 面板
+                // Check if Motion Detect panel
                 const motionForm = panel.querySelector('#motionForm');
                 if (motionForm) {
                     loadMotionConfig();
                 }
+
+                // Check if Storage panel
+                const storageForm = panel.querySelector('#storageForm');
+                if (storageForm) {
+                    loadStorageConfig();
+                }
             }
         }
 
-        // 启动 MJPEG 流媒体
+        // Start MJPEG stream
         function startStream() {
             console.log('Starting stream...');
-            // 首先停止任何现有的流
+            // Stop any existing stream first
             stopStream();
 
-            // 禁用 Capture Image 按钮
+            // Disable Capture Image button
             document.getElementById('captureBtn').disabled = true;
 
-            // 隐藏 Captured Image，显示 Live Stream
+            // Hide Captured Image, show Live Stream
             document.getElementById('snapshotContainer').style.display = 'none';
             document.getElementById('streamContainer').style.display = 'block';
 
-            // 监听加载，获取实际分辨率
+            // Listen for load to get actual resolution
             streamElement.onload = function() {
                 if (this.naturalWidth && this.naturalHeight) {
                     this.style.width = this.naturalWidth + 'px';
@@ -520,16 +565,16 @@
                 }
             };
 
-            // 然后启动新的流（添加时间戳防止缓存）
+            // Start new stream (add timestamp to prevent caching)
             const streamUrl = '/stream?' + new Date().getTime();
             console.log('Setting src to:', streamUrl);
             streamElement.src = streamUrl;
 
-            // 显示保存按钮
+            // Show save button
             updateSaveButtonVisibility();
         }
 
-        // 停止流媒体
+        // Stop stream
         function stopStream() {
             console.log('Stopping stream...');
             if (streamInterval) {
@@ -539,21 +584,21 @@
             streamElement.src = '';
             streamElement.onload = null;
 
-            // 隐藏保存按钮
+            // Hide save button
             document.querySelectorAll('.save-btn').forEach(btn => {
                 btn.classList.remove('visible');
             });
 
-            // 启用 Capture Image 按钮
+            // Enable Capture Image button
             document.getElementById('captureBtn').disabled = false;
         }
 
-        // 抓取单张图片
+        // Capture single image
         function captureImage() {
-            // 停止流
+            // Stop stream
             stopStream();
 
-            // 隐藏 Live Stream，显示 Captured Image
+            // Hide Live Stream, show Captured Image
             document.getElementById('streamContainer').style.display = 'none';
             const snapshotContainer = document.getElementById('snapshotContainer');
             snapshotContainer.style.display = 'block';
@@ -564,14 +609,14 @@
                     const url = URL.createObjectURL(blob);
                     snapshotElement.src = url;
                     snapshotElement.style.display = 'block';
-                    // 显示保存按钮
+                    // Show save button
                     updateSaveButtonVisibility();
                 });
         }
 
-        // 保存当前图像
+        // Save current image
         function saveCurrentImage() {
-            // 判断当前显示的是视频流还是捕获的图片
+            // Determine which image is currently displayed
             let imgElement;
             let filename;
 
@@ -585,21 +630,21 @@
 
             if (!imgElement || !imgElement.src) return;
 
-            // 创建 canvas 保存图像
+            // Create canvas to save image
             const canvas = document.createElement('canvas');
             canvas.width = imgElement.naturalWidth || imgElement.clientWidth;
             canvas.height = imgElement.naturalHeight || imgElement.clientHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
 
-            // 下载
+            // Trigger download
             const link = document.createElement('a');
             link.download = filename;
             link.href = canvas.toDataURL('image/jpeg');
             link.click();
         }
 
-        // 显示/隐藏保存按钮
+        // Show/Hide save button
         function updateSaveButtonVisibility() {
             const hasStream = streamElement.src && streamElement.src !== window.location.href;
             const hasSnapshot = snapshotElement.src && snapshotElement.src !== window.location.href;
@@ -610,9 +655,9 @@
             });
         }
         
-        // 保存配置
+        // Save config
         function saveConfig() {
-            // 获取当前展开的面板
+            // Get the currently expanded panel
             const expandedPanel = document.querySelector('.config-panel.expanded');
             let configData = {};
             let cfgType = 'image';
@@ -620,8 +665,9 @@
             if (expandedPanel) {
                 const rtspForm = expandedPanel.querySelector('#rtspForm');
                 const motionForm = expandedPanel.querySelector('#motionForm');
+                const storageForm = expandedPanel.querySelector('#storageForm');
                 if (rtspForm) {
-                    // RTSP 面板展开，保存 RTSP 配置
+                    // RTSP panel expanded, save RTSP config
                     cfgType = 'rtsp';
                     configData = {
                         rtsp: {
@@ -632,7 +678,7 @@
                         }
                     };
                 } else if (motionForm) {
-                    // Motion Detect 面板展开，保存移动侦测配置
+                    // Motion Detect panel expanded, save motion detect config
                     cfgType = 'motion_detect';
                     configData = {
                         motion_detect: {
@@ -641,8 +687,19 @@
                             night_switch: parseInt(document.getElementById('motionNightSwitch').value, 10)
                         }
                     };
+                } else if (storageForm) {
+                    // Storage panel expanded, save storage config
+                    cfgType = 'storage';
+                    configData = {
+                        storage: {
+                            timed_capture: document.getElementById('storageTimedCapture').value === '1',
+                            capture_interval: parseInt(document.getElementById('storageInterval').value, 10),
+                            auto_upload: document.getElementById('storageAutoUpload').value === '1',
+                            auto_delete: document.getElementById('storageAutoDelete').value === '1'
+                        }
+                    };
                 } else {
-                    // Image 面板展开，保存摄像头配置
+                    // Image panel expanded, save camera config
                     cfgType = 'image';
                     configData = { image: {} };
                     const frameSizeSelect = document.getElementById('frameSize');
@@ -758,6 +815,32 @@
                 })
                 .catch(error => {
                     console.error('Failed to load Motion Detect config:', error);
+                });
+        }
+
+        // 加载 Storage 配置
+        function loadStorageConfig() {
+            fetch('/config?cfg=storage')
+                .then(response => response.json())
+                .then(config => {
+                    console.log('Loaded Storage config:', config);
+                    // 返回的 JSON 格式是 {"storage":{"timed_capture":false,"capture_interval":360,"auto_upload":false,"auto_delete":true}}
+                    const storage = config.storage || config;
+                    if (storage.timed_capture !== undefined) {
+                        document.getElementById('storageTimedCapture').value = storage.timed_capture ? '1' : '0';
+                    }
+                    if (storage.capture_interval !== undefined) {
+                        document.getElementById('storageInterval').value = storage.capture_interval;
+                    }
+                    if (storage.auto_upload !== undefined) {
+                        document.getElementById('storageAutoUpload').value = storage.auto_upload ? '1' : '0';
+                    }
+                    if (storage.auto_delete !== undefined) {
+                        document.getElementById('storageAutoDelete').value = storage.auto_delete ? '1' : '0';
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to load Storage config:', error);
                 });
         }
 

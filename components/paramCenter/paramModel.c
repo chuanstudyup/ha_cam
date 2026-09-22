@@ -29,6 +29,7 @@ static RANGE sen_range = {1, 10};
 static RANGE min_seconds_range = {0, 20};
 static RANGE night_switch_range = {0, 100};
 static RANGE rtsp_port_range = {554, 65535};
+static RANGE capture_interval_range = {10, 3600};
 
 static PARAM_DEF MOTION_DETECT_PARAM[] = {
     {"enable", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
@@ -37,6 +38,8 @@ static PARAM_DEF MOTION_DETECT_PARAM[] = {
 };
 
 static PARAM_DEF STORAGE_PARAM[] = {
+    {"timed_capture", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
+    {"capture_interval", PARAM_TYPE_INT32, {.i32 = 60}, rangeCheck, &capture_interval_range, 0},
     {"auto_upload", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
     {"auto_delete", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
 };

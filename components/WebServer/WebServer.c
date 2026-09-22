@@ -33,6 +33,7 @@
 #include "Utils.h"
 #include "paramCenter.h"
 #include "MotionDetect.h"
+#include "EasyRTSPServer.h"
 
 static const char *TAG = "WebServer";
 
@@ -295,6 +296,22 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
                     cJSON_Delete(motion_json);
                 }
             }
+            else if (strcmp(param, "storage") == 0)
+            {
+                cJSON *storage_json = get_module_json_str(CONFIG_STORAGE);
+                if (storage_json)
+                {
+                    char *json_str = cJSON_PrintUnformatted(storage_json);
+                    if (json_str)
+                    {
+                        httpd_resp_set_type(req, "application/json");
+                        httpd_resp_send(req, json_str, strlen(json_str));
+                        free(json_str);
+                        return ESP_OK;
+                    }
+                    cJSON_Delete(storage_json);
+                }
+            }
         }
         if (httpd_query_key_value(cfg, "cap", param, sizeof(param)) == ESP_OK)
         {
@@ -315,6 +332,32 @@ static esp_err_t get_config_html_handler(httpd_req_t *req)
     httpd_resp_sendstr(req, NULL);
 
     return ESP_OK;
+}
+
+/**
+ * @brief 重启RTSP服务器（用于配置变更后）
+ */
+static void restart_rtsp_server(void)
+{
+    RTSPServer* server = RTSPServer_GetInstance();
+    if (server != NULL)
+    {
+        RTSPServer_Destory(server);
+        ESP_LOGI(TAG, "RTSP Server stopped");
+    }
+
+    if (get_param_bool(CONFIG_RTSP_SERVER, RTSP_SERVER_ENABLE))
+    {
+        server = RTSPServer_Create();
+        RTSPServer_Start(server, get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT));
+        char *user = get_param_string(CONFIG_RTSP_SERVER, RTSP_SERVER_USER);
+        char *password = get_param_string(CONFIG_RTSP_SERVER, RTSP_SERVER_PASSWORD);
+        if (strlen(user) > 0 && strlen(password) > 0)
+        {
+            RTSPServer_SetAuthAccount(server, user, password);
+        }
+        ESP_LOGI(TAG, "RTSP Server Started on port %d", get_param_int32(CONFIG_RTSP_SERVER, RTSP_SERVER_PORT));
+    }
 }
 
 /**
@@ -443,6 +486,76 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
 
                     save_config(CONFIG_MOTION);
                     ESP_LOGI(TAG, "Motion detect config saved");
+                }
+            }
+            else if (strcmp(cfg_type, "storage") == 0)
+            {
+                // 保存存储配置
+                cJSON *storage = cJSON_GetObjectItem(config_json, "storage");
+                if (storage)
+                {
+                    cJSON *timed_capture = cJSON_GetObjectItem(storage, "timed_capture");
+                    cJSON *capture_interval = cJSON_GetObjectItem(storage, "capture_interval");
+                    cJSON *auto_upload = cJSON_GetObjectItem(storage, "auto_upload");
+                    cJSON *auto_delete = cJSON_GetObjectItem(storage, "auto_delete");
+
+                    if (timed_capture && cJSON_IsBool(timed_capture))
+                    {
+                        bool en = cJSON_IsTrue(timed_capture);
+                        if (en != get_param_bool(CONFIG_STORAGE, STORAGE_ENABLE))
+                        {
+                            ESP_LOGI(TAG, "Timed capture enable changed: %s -> %s",
+                                     get_param_bool(CONFIG_STORAGE, STORAGE_ENABLE) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_STORAGE, STORAGE_ENABLE, en, false);
+                        }
+                    }
+
+                    if (capture_interval && cJSON_IsNumber(capture_interval))
+                    {
+                        int32_t val = capture_interval->valueint;
+                        if (val != get_param_int32(CONFIG_STORAGE, STORAGE_INTERVAL))
+                        {
+                            ESP_LOGI(TAG, "Capture interval changed: %d -> %d",
+                                     get_param_int32(CONFIG_STORAGE, STORAGE_INTERVAL), val);
+                            set_param_int32(CONFIG_STORAGE, STORAGE_INTERVAL, val, false);
+                        }
+                    }
+
+                    if (auto_upload && cJSON_IsBool(auto_upload))
+                    {
+                        bool en = cJSON_IsTrue(auto_upload);
+                        if (en != get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_UPLOAD))
+                        {
+                            ESP_LOGI(TAG, "Auto upload changed: %s -> %s",
+                                     get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_UPLOAD) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_STORAGE, STORAGE_AUTO_UPLOAD, en, false);
+                        }
+                    }
+
+                    if (auto_delete && cJSON_IsBool(auto_delete))
+                    {
+                        bool en = cJSON_IsTrue(auto_delete);
+                        if (en != get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE))
+                        {
+                            ESP_LOGI(TAG, "Auto delete changed: %s -> %s",
+                                     get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE, en, false);
+                        }
+                    }
+
+                    save_config(CONFIG_STORAGE);
+                    ESP_LOGI(TAG, "Storage config saved");
+
+                    // 根据 timed_capture 参数动态启停定时拍照任务
+                    bool tc_enabled = get_param_bool(CONFIG_STORAGE, STORAGE_ENABLE);
+                    if (tc_enabled && !storage_timed_capture_is_running())
+                    {
+                        storage_timed_capture_start();
+                    }
+                    else if (!tc_enabled && storage_timed_capture_is_running())
+                    {
+                        storage_timed_capture_stop();
+                    }
                 }
             }
             else

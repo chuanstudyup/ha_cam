@@ -74,25 +74,36 @@ static bool getOldestDir(char *oldestDir)
 /**
  * @brief 根据当前时间格式化日期字符串
  *
- * 根据是否为文件夹类型，生成不同的日期格式路径字符串。
- * 如果是文件夹，格式为：挂载点/年月日/
- * 如果是文件，格式为：挂载点/年月日/年月日_时分秒
+ * 生成日期格式路径字符串。
+ * 如果是文件夹，格式为：挂载点/年月日[_后缀]/
+ * 如果是文件，格式为：挂载点/年月日[_后缀]/年月日_时分秒
  *
  * @param inBuff 输出缓冲区，用于存储格式化后的字符串
  * @param inBuffLen 输出缓冲区的最大长度
  * @param isFolder 是否为文件夹格式（true为文件夹，false为文件）
+ * @param suffix 可选的字符串后缀，在文件夹名称后添加"_后缀"（例如 "abc" 则路径为 /sdcard/20250922_abc/）
  */
-void dateFormat(char *inBuff, size_t inBuffLen, bool isFolder)
+void dateFormat(char *inBuff, size_t inBuffLen, bool isFolder, const char *suffix)
 {
   // construct filename from date/time
   time_t currEpoch = time(NULL);
-  char tmp_buf[32] = {0};
-  if (isFolder)
-    strftime(tmp_buf, sizeof(tmp_buf), "%Y%m%d/", localtime(&currEpoch));
-  else
-    strftime(tmp_buf, sizeof(tmp_buf), "%Y%m%d/%Y%m%d_%H%M%S", localtime(&currEpoch));
+  char folder_buf[64] = {0};
+  char suffix_str[32] = {0};
+  if (suffix != NULL && strlen(suffix) > 0)
+    snprintf(suffix_str, sizeof(suffix_str), "_%s", suffix);
 
-  snprintf(inBuff, inBuffLen, "%s/%s", SD_MOUNT_POINT, tmp_buf);
+  if (isFolder)
+  {
+    strftime(folder_buf, sizeof(folder_buf), "%Y%m%d", localtime(&currEpoch));
+    snprintf(inBuff, inBuffLen, "%s/%s%s/", SD_MOUNT_POINT, folder_buf, suffix_str);
+  }
+  else
+  {
+    strftime(folder_buf, sizeof(folder_buf), "%Y%m%d", localtime(&currEpoch));
+    char file_buf[32] = {0};
+    strftime(file_buf, sizeof(file_buf), "%Y%m%d_%H%M%S", localtime(&currEpoch));
+    snprintf(inBuff, inBuffLen, "%s/%s%s/%s", SD_MOUNT_POINT, folder_buf, suffix_str, file_buf);
+  }
 }
 
 /**
@@ -116,7 +127,7 @@ void setFolderName(const char *fname, char *fileName)
   {
     if (!strcmp(fname, currentDir))
     {
-      dateFormat(partName, sizeof(partName), true);
+      dateFormat(partName, sizeof(partName), true, NULL);
       strcpy(fileName, partName);
       ESP_LOGI(TAG, "Current directory set to %s", fileName);
     }

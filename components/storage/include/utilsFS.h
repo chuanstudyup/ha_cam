@@ -66,16 +66,17 @@ uint32_t getSDFreeSpace(void);
 
 /**
  * @brief 根据当前时间格式化日期字符串
- * 
- * 根据是否为文件夹类型，生成不同的日期格式路径字符串。
- * 如果是文件夹，格式为：挂载点/年月日
- * 如果是文件，格式为：挂载点/年月日/年月日_时分秒
- * 
+ *
+ * 生成日期格式路径字符串。
+ * 如果是文件夹，格式为：挂载点/年月日[_后缀]/
+ * 如果是文件，格式为：挂载点/年月日[_后缀]/年月日_时分秒
+ *
  * @param inBuff 输出缓冲区，用于存储格式化后的字符串
  * @param inBuffLen 输出缓冲区的最大长度
  * @param isFolder 是否为文件夹格式（true为文件夹，false为文件）
+ * @param suffix 可选的字符串后缀，在文件夹名称后添加"_后缀"（例如 "abc" 则路径为 /sdcard/20250922_abc/）
  */
-void dateFormat(char* inBuff, size_t inBuffLen, bool isFolder);
+void dateFormat(char* inBuff, size_t inBuffLen, bool isFolder, const char *suffix);
 
 /**
  * @brief 删除指定文件或文件夹

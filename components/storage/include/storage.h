@@ -96,6 +96,28 @@ bool storageInit();
 
 void storageSetFPS(uint8_t fps);
 
+/**
+ * @brief 启动定时拍照任务
+ * 
+ * 创建并启动一个任务，根据 paramCenter 中的 STORAGE 配置
+ * (timed_capture 开关, capture_interval 间隔) 定期拍摄照片保存到 SD 卡。
+ * 
+ * @return true - 任务启动成功或已在运行
+ * @return false - 任务创建失败
+ */
+bool storage_timed_capture_start(void);
+
+/**
+ * @brief 停止定时拍照任务
+ */
+void storage_timed_capture_stop(void);
+
+/**
+ * @brief 查询定时拍照任务是否在运行
+ * @return true - 正在运行, false - 未运行
+ */
+bool storage_timed_capture_is_running(void);
+
 bool openSDfile(const char *streamFile);
 
 fnameStruct* playbackFPS(const char *fname);

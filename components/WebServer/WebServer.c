@@ -498,6 +498,7 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
                     cJSON *capture_interval = cJSON_GetObjectItem(storage, "capture_interval");
                     cJSON *auto_upload = cJSON_GetObjectItem(storage, "auto_upload");
                     cJSON *auto_delete = cJSON_GetObjectItem(storage, "auto_delete");
+                    cJSON *motion_record = cJSON_GetObjectItem(storage, "motion_record");
 
                     if (timed_capture && cJSON_IsBool(timed_capture))
                     {
@@ -540,6 +541,17 @@ static esp_err_t set_config_html_handler(httpd_req_t *req)
                             ESP_LOGI(TAG, "Auto delete changed: %s -> %s",
                                      get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE) ? "true" : "false", en ? "true" : "false");
                             set_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE, en, false);
+                        }
+                    }
+
+                    if (motion_record && cJSON_IsBool(motion_record))
+                    {
+                        bool en = cJSON_IsTrue(motion_record);
+                        if (en != get_param_bool(CONFIG_STORAGE, STORAGE_MOTION_RECORD))
+                        {
+                            ESP_LOGI(TAG, "Motion record changed: %s -> %s",
+                                     get_param_bool(CONFIG_STORAGE, STORAGE_MOTION_RECORD) ? "true" : "false", en ? "true" : "false");
+                            set_param_bool(CONFIG_STORAGE, STORAGE_MOTION_RECORD, en, false);
                         }
                     }
 

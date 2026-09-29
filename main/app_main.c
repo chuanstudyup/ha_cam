@@ -247,6 +247,13 @@ void app_main(void)
         return;
     }
 
+    // 初始化存储模块（AVI录制、播放任务、运动检测录像任务等）
+    if (!storageInit())
+    {
+        ESP_LOGE(TAG, "Storage Init Failed");
+        return;
+    }
+
     if (ESP_OK != init_camera())
     {
         ESP_LOGE(TAG, "Camera Init Failed");

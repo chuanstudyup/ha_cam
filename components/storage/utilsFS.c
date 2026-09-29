@@ -12,11 +12,12 @@
 
 #include "Utils.h"
 #include "utilsFS.h"
+#include "cJSON.h"
+#include "paramCenter.h"
 
 #define TAG "UtilsFS"
 
-int sdFreeSpaceMode;          // 0 - No Check, 1 - Delete oldest dir, 2 - Upload to ftp and then delete folder on SD
-int sdMinCardFreeSpace = 100; // Minimum amount of card free Megabytes before sdFreeSpaceMode action is enabled
+int sdMinCardFreeSpace = 100; // Minimum amount of card free Megabytes before auto_delete action is enabled
 
 static char *resetDir = "/~reset";
 static char *currentDir = "/~current";
@@ -302,27 +303,32 @@ void deleteFolderOrFile(const char *deleteThis)
 bool checkFreeStorage()
 {
   // Check for sufficient space on storage
-  bool res = false;
-  size_t freeSize = getSDTotalSpace() / 1024; // in MB
-  if (!sdFreeSpaceMode && freeSize < sdMinCardFreeSpace)
-    ESP_LOGW(TAG, "Space left %uMB is less than minimum %uMB", freeSize, sdMinCardFreeSpace);
+  // 如果 auto_delete 启用, 会在空间不足时自动删除最旧的文件夹
+  size_t freeSize = getSDFreeSpace() / 1024; // in MB
+  bool res = freeSize >= sdMinCardFreeSpace;
+
+  if (!get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE))
+  {
+    if (freeSize < sdMinCardFreeSpace)
+      ESP_LOGW(TAG, "Space left %luMB is less than minimum %uMB", (unsigned long)freeSize, sdMinCardFreeSpace);
+  }
   else
   {
-    // delete to make space
+    // delete oldest folders until enough space
     while (freeSize < sdMinCardFreeSpace)
     {
-      char oldestDir[FILE_NAME_LEN];
-      getOldestDir(oldestDir);
-      ESP_LOGW(TAG, "Deleting oldest folder: %s %s", oldestDir, sdFreeSpaceMode == 2 ? "after uploading" : "");
-#if INCLUDE_FTP_HFS
-      if (sdFreeSpaceMode == 2)
-        fsStartTransfer(oldestDir); // transfer and then delete oldest folder
-#endif
+      char oldestDir[FILE_NAME_LEN] = {0};
+      if (!getOldestDir(oldestDir))
+      {
+        ESP_LOGW(TAG, "No folder available to delete");
+        break;
+      }
+      ESP_LOGW(TAG, "Deleting oldest folder: %s", oldestDir);
       deleteFolderOrFile(oldestDir);
-      freeSize = getSDTotalSpace() / 1024;
+      freeSize = getSDFreeSpace() / 1024;
     }
-    ESP_LOGI(TAG, "Storage free space: %lu MB", getSDTotalSpace() / 1024);
-    res = true;
+    ESP_LOGI(TAG, "Storage free space: %lu MB", (unsigned long)(getSDFreeSpace() / 1024));
+    res = freeSize >= sdMinCardFreeSpace;
   }
   return res;
 }
@@ -523,9 +529,13 @@ bool showFatFsInfo(void)
   ESP_LOGI(TAG, "Total clusters: %lu. Free clusters: %lu. Cluster size: %u. Sector size: %u",
            fs->n_fatent, fre_clust, fs->csize, fs->ssize);
 
-  uint32_t total = (fs->csize * fs->n_fatent * fs->ssize); // in B
-  uint32_t free = (fs->csize * fre_clust * fs->ssize);     // in B
-  ESP_LOGI(TAG, "SD Total space: %s. SD Free space: %s", fmtSize(total), fmtSize(free));
+  uint64_t total = (uint64_t)fs->csize * (fs->n_fatent - 2) * fs->ssize; // in B
+  uint64_t free = (uint64_t)fs->csize * fre_clust * fs->ssize;           // in B
+  char totalStr[20];
+  char freeStr[20];
+  snprintf(totalStr, sizeof(totalStr), "%s", fmtSize(total));
+  snprintf(freeStr, sizeof(freeStr), "%s", fmtSize(free));
+  ESP_LOGI(TAG, "SD Total space: %s. SD Free space: %s", totalStr, freeStr);
 
   return true;
 }
@@ -547,9 +557,9 @@ uint32_t getSDTotalSpace(void)
   {
     return 0;
   }
-  uint32_t total = (fs->csize * fs->n_fatent * fs->ssize) / 1024; // in KB
+  uint64_t total = ((uint64_t)fs->csize * (fs->n_fatent - 2) * fs->ssize) / 1024; // in KB
 
-  return total;
+  return total > UINT32_MAX ? UINT32_MAX : (uint32_t)total;
 }
 
 /**
@@ -568,8 +578,8 @@ uint32_t getSDFreeSpace(void)
   {
     return 0;
   }
-  uint32_t free = (fs->csize * fre_clust * fs->ssize) / 1024; // in KB
-  return free;
+  uint64_t free = ((uint64_t)fs->csize * fre_clust * fs->ssize) / 1024; // in KB
+  return free > UINT32_MAX ? UINT32_MAX : (uint32_t)free;
 }
 
 /**

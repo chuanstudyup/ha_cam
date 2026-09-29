@@ -13,6 +13,8 @@
 #include "ChipInfo.h"
 #include "vCenter.h"
 #include "esp_jpeg_dec.h"
+#include "storage.h"
+#include "paramCenter.h"
 
 #define ps_malloc(size) heap_caps_malloc((size), MALLOC_CAP_SPIRAM)
 
@@ -416,6 +418,11 @@ bool checkMotion(bool motionStatus)
     {
       ESP_LOGI(TAG, "***** Motion - START");
       motionStatus = true; // motion started
+      // 通知存储模块开始录像（如果配置了运动录像）
+      if (get_param_bool(CONFIG_STORAGE, STORAGE_MOTION_RECORD))
+      {
+        storage_motion_record_start();
+      }
     }
     l_still = false;
   }
@@ -430,6 +437,8 @@ bool checkMotion(bool motionStatus)
     // insufficient change or motion not classified
     ESP_LOGI(TAG, "***** Motion - STOP");
     motionStatus = false; // motion stopped
+    // 通知存储模块停止录像（不受配置开关影响, 确保录像任务能退出录制循环）
+    storage_motion_record_stop();
   }
   if (motionStatus)
     ESP_LOGI(TAG, "*** Motion - ongoing %u frames", motionCnt);

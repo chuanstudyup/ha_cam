@@ -42,6 +42,7 @@ static PARAM_DEF STORAGE_PARAM[] = {
     {"capture_interval", PARAM_TYPE_INT32, {.i32 = 60}, rangeCheck, &capture_interval_range, 0},
     {"auto_upload", PARAM_TYPE_BOOL, {.b = false}, NULL, NULL, 0},
     {"auto_delete", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
+    {"motion_record", PARAM_TYPE_BOOL, {.b = true}, NULL, NULL, 0},
 };
 
 static PARAM_DEF RTSP_SERVER_PARAM[] = {

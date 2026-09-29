@@ -473,6 +473,13 @@
                                         <option value="1">On</option>
                                     </select>
                                 </div>
+                                <div>
+                                    <label for="storageMotionRecord">Motion Record:</label>
+                                    <select id="storageMotionRecord" name="storageMotionRecord">
+                                        <option value="1">On</option>
+                                        <option value="0">Off</option>
+                                    </select>
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -695,7 +702,8 @@
                             timed_capture: document.getElementById('storageTimedCapture').value === '1',
                             capture_interval: parseInt(document.getElementById('storageInterval').value, 10),
                             auto_upload: document.getElementById('storageAutoUpload').value === '1',
-                            auto_delete: document.getElementById('storageAutoDelete').value === '1'
+                            auto_delete: document.getElementById('storageAutoDelete').value === '1',
+                            motion_record: document.getElementById('storageMotionRecord').value === '1'
                         }
                     };
                 } else {
@@ -824,7 +832,7 @@
                 .then(response => response.json())
                 .then(config => {
                     console.log('Loaded Storage config:', config);
-                    // 返回的 JSON 格式是 {"storage":{"timed_capture":false,"capture_interval":360,"auto_upload":false,"auto_delete":true}}
+                    // 返回的 JSON 格式是 {"storage":{"timed_capture":false,"capture_interval":360,"auto_upload":false,"auto_delete":true,"motion_record":true}}
                     const storage = config.storage || config;
                     if (storage.timed_capture !== undefined) {
                         document.getElementById('storageTimedCapture').value = storage.timed_capture ? '1' : '0';
@@ -837,6 +845,9 @@
                     }
                     if (storage.auto_delete !== undefined) {
                         document.getElementById('storageAutoDelete').value = storage.auto_delete ? '1' : '0';
+                    }
+                    if (storage.motion_record !== undefined) {
+                        document.getElementById('storageMotionRecord').value = storage.motion_record ? '1' : '0';
                     }
                 })
                 .catch(error => {

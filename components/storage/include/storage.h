@@ -118,6 +118,24 @@ void storage_timed_capture_stop(void);
  */
 bool storage_timed_capture_is_running(void);
 
+/**
+ * @brief 触发运动检测录像启动
+ * 
+ * 向 motionRecordTask 发送启动信号，开始录制 AVI 文件。
+ * 录制循环会持续抓取最新帧并保存到 SD 卡，直到收到停止信号。
+ * 
+ * @return true - 信号发送成功
+ * @return false - 任务未初始化
+ */
+bool storage_motion_record_start(void);
+
+/**
+ * @brief 触发运动检测录像停止
+ * 
+ * 向 motionRecordTask 发送停止信号，停止录制并关闭 AVI 文件。
+ */
+void storage_motion_record_stop(void);
+
 bool openSDfile(const char *streamFile);
 
 fnameStruct* playbackFPS(const char *fname);

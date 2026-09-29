@@ -111,7 +111,7 @@ bool put_vframe_to_center(unsigned int timestamp, pixformat_t format, size_t wid
 
     if (size > l_v_center.video_buffer_size)
     {
-        ESP_LOGW(TAG, "Video frame size too large, truncating to %d bytes", l_v_center.video_buffer_size);
+        ESP_LOGW(TAG, "Video frame size too large %d bytes, truncating to %d bytes", size, l_v_center.video_buffer_size);
         return false;
     }
 

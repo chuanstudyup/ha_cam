@@ -205,7 +205,6 @@ static uint32_t cTime;     // 文件关闭耗时 ms
 static uint32_t sTime;     // file streaming time
 
 // status & control fields
-extern bool doRecording; // whether to capture to SD or not
 
 static bool haveSrt = false; // whether telemetry data is being recorded
 
@@ -456,8 +455,6 @@ bool closeAvi(char *fileName)
     if (tgramUse)
       tgramAlert(aviFileName, "");
 #endif
-    if (!checkFreeStorage())
-      doRecording = false;
     return true;
   }
   else
@@ -695,6 +692,10 @@ static void playbackTask(void *parameter)
   vTaskDelete(NULL);
 }
 
+/************   Motion Record (forward declarations) ***********************/
+static TaskHandle_t motionRecordHandle = NULL;
+static void motionRecordTask(void *pvParameters);
+
 bool storageInit()
 {
   // initialisation & prep for AVI capture
@@ -717,8 +718,11 @@ bool storageInit()
     return false;
   }
 
-  pbFileMutex = xSemaphoreCreateMutex();
+    pbFileMutex = xSemaphoreCreateMutex();
   xTaskCreate(&playbackTask, "playbackTask", PLAYBACK_STACK_SIZE, NULL, PLAY_PRI, &playbackHandle);
+
+  // 运动检测录像任务: 通过通知启停, 独立栈空间避免阻塞其他任务
+  xTaskCreate(motionRecordTask, "motionRecord", 8192, NULL, 5, &motionRecordHandle);
 
   debugMemory("storageInit");
   return true;
@@ -823,4 +827,99 @@ void storage_timed_capture_stop(void)
 bool storage_timed_capture_is_running(void)
 {
     return (timedCaptureHandle != NULL);
+}
+
+/************   Motion Record ***********************/
+#define MOTION_RECORD_FPS 15
+#define MOTION_RECORD_MAX_FRAMES 600   // 最大帧数(15fps≈40秒), 超出自动停止
+
+static void motionRecordTask(void *pvParameters)
+{
+    bool recording = false;
+    ESP_LOGI(TAG, "Motion record task started");
+
+    while (1)
+    {
+        uint32_t notification = 0;
+
+        // 等待通知: 1=开始录制, 2=停止录制
+        xTaskNotifyWait(0, ULONG_MAX, &notification, portMAX_DELAY);
+
+        if (notification == 1 && !recording)
+        {
+            // 开始录制
+            if (!openAvi())
+            {
+                ESP_LOGE(TAG, "Failed to open AVI for motion recording");
+                continue;
+            }
+            recording = true;
+            uint32_t frameCount = 0;
+            ESP_LOGI(TAG, "Motion recording started");
+
+            // 录制循环: 持续抓取最新帧并保存, 同时非阻塞检查停止信号
+            while (recording)
+            {
+                // 检查帧数上限
+                if (frameCount >= MOTION_RECORD_MAX_FRAMES)
+                {
+                    ESP_LOGI(TAG, "Motion recording reached max frames (%u), stopping", MOTION_RECORD_MAX_FRAMES);
+                    break;
+                }
+
+                // 非阻塞检查停止通知 (value=2)
+                notification = 0;
+                if (xTaskNotifyWait(0, ULONG_MAX, &notification, 0) == pdTRUE && notification == 2)
+                {
+                    ESP_LOGI(TAG, "Motion recording stop signal received");
+                    break;
+                }
+
+                video_node *node = get_latest_video_frame();
+                if (node)
+                {
+                    saveFrame(node->data, node->size);
+                    put_video_frame(node);
+                    frameCount++;
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "Failed to get video frame for recording");
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(1000 / MOTION_RECORD_FPS));
+            }
+
+            // 关闭文件
+            closeAvi(NULL);
+            checkFreeStorage();
+            recording = false;
+            ESP_LOGI(TAG, "Motion recording stopped, %u frames saved", frameCount);
+        }
+    }
+}
+
+bool storage_motion_record_start(void)
+{
+    if (motionRecordHandle == NULL)
+    {
+        ESP_LOGE(TAG, "Motion record task not initialized");
+        return false;
+    }
+
+    xTaskNotify(motionRecordHandle, 1, eSetValueWithOverwrite);
+    ESP_LOGI(TAG, "Motion record start signal sent");
+    return true;
+}
+
+void storage_motion_record_stop(void)
+{
+    if (motionRecordHandle == NULL)
+    {
+        ESP_LOGE(TAG, "Motion record task not initialized");
+        return;
+    }
+
+    xTaskNotify(motionRecordHandle, 2, eSetValueWithOverwrite);
+    ESP_LOGI(TAG, "Motion record stop signal sent");
 }

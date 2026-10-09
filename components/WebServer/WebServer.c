@@ -11,12 +11,14 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "esp_camera.h"
 #include "cJSON.h"
 #include "esp_http_server.h"
@@ -34,6 +36,7 @@
 #include "paramCenter.h"
 #include "MotionDetect.h"
 #include "EasyRTSPServer.h"
+#include "ChipInfo.h"
 
 static const char *TAG = "WebServer";
 
@@ -1279,6 +1282,78 @@ static esp_err_t storage_info_handler(httpd_req_t *req)
 }
 
 /**
+ * @brief 获取系统状态
+ * GET /api/system/status
+ */
+static esp_err_t system_status_handler(httpd_req_t *req)
+{
+    int64_t uptime_sec = esp_timer_get_time() / 1000000;
+
+    char local_time[32] = {0};
+    time_t now = time(NULL);
+    struct tm timeinfo;
+    if (localtime_r(&now, &timeinfo) != NULL)
+    {
+        strftime(local_time, sizeof(local_time), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    }
+    else
+    {
+        snprintf(local_time, sizeof(local_time), "unknown");
+    }
+
+    float cpu_temp = 0.0f;
+    esp_err_t temp_ret = getCpuTemperature(&cpu_temp);
+    if (temp_ret == ESP_ERR_INVALID_STATE)
+    {
+        temp_ret = initCpuTemperature();
+        if (temp_ret == ESP_OK)
+        {
+            temp_ret = getCpuTemperature(&cpu_temp);
+        }
+    }
+
+    uint32_t heap_total = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+    uint32_t heap_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    uint32_t heap_used = heap_total > heap_free ? heap_total - heap_free : 0;
+    uint32_t heap_used_percent = heap_total > 0 ? heap_used * 100 / heap_total : 0;
+
+    uint32_t sd_total_kb = getSDTotalSpace();
+    uint32_t sd_free_kb = getSDFreeSpace();
+    uint32_t sd_used_kb = sd_total_kb > sd_free_kb ? sd_total_kb - sd_free_kb : 0;
+    uint32_t sd_used_percent = sd_total_kb > 0 ? sd_used_kb * 100 / sd_total_kb : 0;
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "uptime_sec", uptime_sec);
+    cJSON_AddStringToObject(root, "local_time", local_time);
+    if (temp_ret == ESP_OK)
+    {
+        cJSON_AddNumberToObject(root, "cpu_temp_c", cpu_temp);
+    }
+    else
+    {
+        cJSON_AddNullToObject(root, "cpu_temp_c");
+    }
+    cJSON_AddNumberToObject(root, "cpu_temp_status", temp_ret);
+    cJSON_AddNumberToObject(root, "heap_total", heap_total);
+    cJSON_AddNumberToObject(root, "heap_free", heap_free);
+    cJSON_AddNumberToObject(root, "heap_used", heap_used);
+    cJSON_AddNumberToObject(root, "heap_used_percent", heap_used_percent);
+    cJSON_AddNumberToObject(root, "sd_total_kb", sd_total_kb);
+    cJSON_AddNumberToObject(root, "sd_free_kb", sd_free_kb);
+    cJSON_AddNumberToObject(root, "sd_used_kb", sd_used_kb);
+    cJSON_AddNumberToObject(root, "sd_used_percent", sd_used_percent);
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+
+    cJSON_Delete(root);
+    free(json_str);
+
+    return ESP_OK;
+}
+
+/**
  * @brief 格式化存储（HTTP 接口）
  * POST /api/storage/format
  */
@@ -1396,7 +1471,7 @@ httpd_handle_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_handle_t stream_httpd = NULL;
-    config.max_uri_handlers = 16; // 增加URI处理器数量以支持更多功能
+    config.max_uri_handlers = 17; // 增加URI处理器数量以支持更多功能
     config.stack_size = 8192;     // 增加堆栈大小以处理更复杂的请求
 
     httpd_uri_t uri_get = {
@@ -1489,6 +1564,12 @@ httpd_handle_t web_server_start(void)
         .handler = storage_format_handler,
         .user_ctx = NULL};
 
+    httpd_uri_t api_system_status = {
+        .uri = "/api/system/status",
+        .method = HTTP_GET,
+        .handler = system_status_handler,
+        .user_ctx = NULL};
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK)
     {
         httpd_register_uri_handler(stream_httpd, &uri_get);
@@ -1508,6 +1589,7 @@ httpd_handle_t web_server_start(void)
         httpd_register_uri_handler(stream_httpd, &api_files_mkdir);
         httpd_register_uri_handler(stream_httpd, &api_storage_info);
         httpd_register_uri_handler(stream_httpd, &api_storage_format);
+        httpd_register_uri_handler(stream_httpd, &api_system_status);
 
         start_sustainTasks();
 

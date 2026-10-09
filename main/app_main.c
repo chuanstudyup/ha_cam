@@ -226,6 +226,12 @@ void app_main(void)
         esp_log_level_set("wifi", CONFIG_LOG_MAXIMUM_LEVEL);
     }
 
+    ret = initCpuTemperature();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "CPU temperature sensor init failed: %s", esp_err_to_name(ret));
+    }
+
     chip_info();
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");

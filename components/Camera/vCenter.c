@@ -40,7 +40,7 @@ bool init_video_center(void)
     l_v_center.mutex = xSemaphoreCreateMutex();
     int frameSize = get_camera_frame_size();
 
-    l_v_center.video_buffer_size = frameData[frameSize].frameWidth * frameData[frameSize].frameHeight / 5; // rough estimate for JPEG buffer size
+    l_v_center.video_buffer_size = frameData[frameSize].frameWidth * frameData[frameSize].frameHeight / 3; // rough estimate for JPEG buffer size
 
     INIT_LIST_HEAD(&l_v_center.video_list);
 

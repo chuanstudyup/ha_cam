@@ -1,8 +1,13 @@
 #include <stdio.h>
 #include "esp_chip_info.h"
+#include "esp_err.h"
 #include "esp_flash.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "soc/soc_caps.h"
+#if SOC_TEMP_SENSOR_SUPPORTED
+#include "driver/temperature_sensor.h"
+#endif
 #include <time.h>
 
 #define TAG "ChipInfo"
@@ -11,6 +16,83 @@
 #define WARN_ALLOC (16 * 1024) // low free max allocatable free heap block
 
 #define DEBUG_MEM true // in function debugMemory()
+
+#if SOC_TEMP_SENSOR_SUPPORTED
+static temperature_sensor_handle_t cpu_temp_handle = NULL;
+#endif
+
+esp_err_t initCpuTemperature(void)
+{
+#if SOC_TEMP_SENSOR_SUPPORTED
+    if (cpu_temp_handle != NULL)
+    {
+        return ESP_OK;
+    }
+
+    temperature_sensor_config_t temp_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
+    esp_err_t ret = temperature_sensor_install(&temp_config, &cpu_temp_handle);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    ret = temperature_sensor_enable(cpu_temp_handle);
+    if (ret != ESP_OK)
+    {
+        temperature_sensor_uninstall(cpu_temp_handle);
+        cpu_temp_handle = NULL;
+    }
+
+    return ret;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t getCpuTemperature(float *out_celsius)
+{
+    if (out_celsius == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+#if SOC_TEMP_SENSOR_SUPPORTED
+    if (cpu_temp_handle == NULL)
+    {
+        ESP_LOGW(TAG, "CPU temperature sensor not initialized, call initCpuTemperature() first");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return temperature_sensor_get_celsius(cpu_temp_handle, out_celsius);
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t deinitCpuTemperature(void)
+{
+#if SOC_TEMP_SENSOR_SUPPORTED
+    if (cpu_temp_handle == NULL)
+    {
+        ESP_LOGW(TAG, "CPU temperature sensor not initialized, call initCpuTemperature() first");
+        return ESP_OK;
+    }
+
+    esp_err_t ret = temperature_sensor_disable(cpu_temp_handle);
+    if (ret == ESP_OK)
+    {
+        ret = temperature_sensor_uninstall(cpu_temp_handle);
+    }
+    if (ret == ESP_OK)
+    {
+        cpu_temp_handle = NULL;
+    }
+
+    return ret;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
 
 void chip_info(void)
 {
@@ -42,6 +124,17 @@ void chip_info(void)
     ESP_LOGI(TAG, "In RAM free size: %u bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     ESP_LOGI(TAG, "SPI Ram free size: %u bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     ESP_LOGI(TAG, "Total Ram free size: %u bytes", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+
+    float cpu_temp = 0.0f;
+    esp_err_t ret = getCpuTemperature(&cpu_temp);
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI(TAG, "CPU temperature: %.1f C", cpu_temp);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Get CPU temperature failed: %s", esp_err_to_name(ret));
+    }
 }
 
 void debugMemory(const char *caller)

@@ -11,7 +11,7 @@
             width: 100%;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 20px 20px 72px;
             box-sizing: border-box;
             background-color: #f5f5f5;
             color: #333;
@@ -233,6 +233,37 @@
         .panel-inner {
             padding: 15px;
             background-color: white;
+        }
+        .status-bar {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            background-color: rgba(44, 62, 80, 0.96);
+            color: #f8f9fa;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.18);
+            font-size: 13px;
+        }
+        .status-item {
+            white-space: nowrap;
+        }
+        .status-label {
+            color: #bdc3c7;
+            margin-right: 4px;
+        }
+        .status-value {
+            font-weight: 600;
+        }
+        .status-error {
+            color: #ffb4a9;
         }
     </style>
 <body>
@@ -510,11 +541,20 @@
         </div>
     </div>
 
+    <div class="status-bar" id="systemStatusBar">
+        <span class="status-item"><span class="status-label">Uptime</span><span class="status-value" id="statusUptime">--</span></span>
+        <span class="status-item"><span class="status-label">Time</span><span class="status-value" id="statusLocalTime">--</span></span>
+        <span class="status-item"><span class="status-label">CPU</span><span class="status-value" id="statusCpuTemp">--</span></span>
+        <span class="status-item"><span class="status-label">Memory</span><span class="status-value" id="statusMemory">--</span></span>
+        <span class="status-item"><span class="status-label">SD</span><span class="status-value" id="statusSd">--</span></span>
+    </div>
+
     <!-- JavaScript -->
     <script>
         let streamInterval;
         const streamElement = document.getElementById('stream');
         const snapshotElement = document.getElementById('snapshot');
+        let systemStatusTimer = null;
 
         // Accordion panel toggle
         function togglePanel(header) {
@@ -660,6 +700,71 @@
             document.querySelectorAll('.save-btn').forEach(btn => {
                 btn.classList.toggle('visible', hasImage);
             });
+        }
+
+        function formatDuration(totalSeconds) {
+            if (!Number.isFinite(totalSeconds)) return '--';
+            const days = Math.floor(totalSeconds / 86400);
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            const time = [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':');
+            return days > 0 ? days + 'd ' + time : time;
+        }
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes)) return '--';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let value = bytes;
+            let unitIndex = 0;
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024;
+                unitIndex++;
+            }
+            return (unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)) + units[unitIndex];
+        }
+
+        function updateSystemStatus() {
+            fetch('/api/system/status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('status ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(status => {
+                    document.getElementById('systemStatusBar').classList.remove('status-error');
+                    document.getElementById('statusUptime').textContent = formatDuration(status.uptime_sec);
+                    document.getElementById('statusLocalTime').textContent = status.local_time || '--';
+                    document.getElementById('statusCpuTemp').textContent =
+                        Number.isFinite(status.cpu_temp_c) ? status.cpu_temp_c.toFixed(1) + 'C' : '--';
+                    const heapPercent = status.heap_used_percent !== undefined ? status.heap_used_percent : '--';
+                    const sdPercent = status.sd_used_percent !== undefined ? status.sd_used_percent : '--';
+                    document.getElementById('statusMemory').textContent =
+                        formatBytes(status.heap_used) + ' / ' + formatBytes(status.heap_total) +
+                        ' (' + heapPercent + '%)';
+                    document.getElementById('statusSd').textContent =
+                        formatBytes((status.sd_used_kb || 0) * 1024) + ' / ' +
+                        formatBytes((status.sd_total_kb || 0) * 1024) +
+                        ' (' + sdPercent + '%)';
+                })
+                .catch(error => {
+                    console.error('System status update failed:', error);
+                    document.getElementById('systemStatusBar').classList.add('status-error');
+                    document.getElementById('statusUptime').textContent = '--';
+                    document.getElementById('statusLocalTime').textContent = 'offline';
+                    document.getElementById('statusCpuTemp').textContent = '--';
+                    document.getElementById('statusMemory').textContent = '--';
+                    document.getElementById('statusSd').textContent = '--';
+                });
+        }
+
+        function startSystemStatusPolling() {
+            updateSystemStatus();
+            if (systemStatusTimer) {
+                clearInterval(systemStatusTimer);
+            }
+            systemStatusTimer = setInterval(updateSystemStatus, 5000);
         }
         
         // Save config
@@ -998,6 +1103,7 @@
         // 页面加载时自动加载分辨率列表和配置
         window.addEventListener('load', function() {
             loadSupportedResolutions();
+            startSystemStatusPolling();
         });
 
         // 初始化按钮状态

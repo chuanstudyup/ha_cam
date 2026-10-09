@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include <string.h>
 
 #include "esp_vfs_fat.h"
@@ -24,9 +25,33 @@ static char *currentDir = "/~current";
 static char *previousDir = "/~previous";
 
 /**
+ * @brief 判断目录是否由录像功能创建
+ *
+ * 录像目录使用 YYYYMMDD 或 YYYYMMDD_<suffix> 格式。自动清理只能处理
+ * 此类目录，避免将 SD 卡上由其他设备或系统创建的目录作为删除目标。
+ */
+static bool isRecordingDirName(const char *name)
+{
+  if (strlen(name) < 8)
+  {
+    return false;
+  }
+
+  for (size_t i = 0; i < 8; i++)
+  {
+    if (!isdigit((unsigned char)name[i]))
+    {
+      return false;
+    }
+  }
+
+  return name[8] == '\0' || (name[8] == '_' && name[9] != '\0');
+}
+
+/**
  * @brief 获取最旧的目录
  *
- * 遍历SD卡挂载点下的所有目录，排除系统目录和数据目录，
+ * 遍历SD卡挂载点下由录像功能创建的日期目录，
  * 通过比较目录名称找到最旧的目录（按字母顺序最小的目录名）。
  *
  * @param oldestDir 输出参数，用于存储找到的最旧目录完整路径
@@ -40,6 +65,8 @@ static bool getOldestDir(char *oldestDir)
   bool find = false;
   DIR *dir = NULL;
   struct dirent *entry;
+  // 预留挂载路径和分隔符，确保后续拼接到 oldestDir 时不会截断。
+  char oldestName[FILE_NAME_LEN - sizeof(SD_MOUNT_POINT)] = {0};
 
   dir = opendir(SD_MOUNT_POINT);
   if (dir == NULL)
@@ -55,20 +82,24 @@ static bool getOldestDir(char *oldestDir)
       continue;
     }
 
-    if (strstr(entry->d_name, "System") != NULL || strstr(entry->d_name, DATA_DIR) != NULL || strstr(entry->d_name, "SYSTEM") != NULL)
+    if (!isRecordingDirName(entry->d_name))
     {
       continue;
     }
 
     // 比较文件夹名称，找到最旧的目录
-    if (strlen(oldestDir) == 0 || strcmp(oldestDir, entry->d_name) > 0)
+    if (!find || strcmp(oldestName, entry->d_name) > 0)
     {
-      strcpy(oldestDir, entry->d_name);
-      snprintf(oldestDir, FILE_NAME_LEN, "%s/%s", SD_MOUNT_POINT, entry->d_name);
+      snprintf(oldestName, sizeof(oldestName), "%s", entry->d_name);
       find = true;
     }
   }
   closedir(dir);
+
+  if (find)
+  {
+    snprintf(oldestDir, FILE_NAME_LEN, "%s/%s", SD_MOUNT_POINT, oldestName);
+  }
   return find;
 }
 
@@ -304,18 +335,19 @@ bool checkFreeStorage()
 {
   // Check for sufficient space on storage
   // 如果 auto_delete 启用, 会在空间不足时自动删除最旧的文件夹
-  size_t freeSize = getSDFreeSpace() / 1024; // in MB
-  bool res = freeSize >= sdMinCardFreeSpace;
+  size_t freeSize = getSDFreeSpace(); // in KB
+  size_t minFreeSize = (size_t)sdMinCardFreeSpace * 1024;
+  bool res = freeSize >= minFreeSize;
 
   if (!get_param_bool(CONFIG_STORAGE, STORAGE_AUTO_DELETE))
   {
-    if (freeSize < sdMinCardFreeSpace)
-      ESP_LOGW(TAG, "Space left %luMB is less than minimum %uMB", (unsigned long)freeSize, sdMinCardFreeSpace);
+    if (freeSize < minFreeSize)
+      ESP_LOGW(TAG, "Space left %luMB is less than minimum %uMB", (unsigned long)(freeSize / 1024), sdMinCardFreeSpace);
   }
   else
   {
     // delete oldest folders until enough space
-    while (freeSize < sdMinCardFreeSpace)
+    while (freeSize < minFreeSize)
     {
       char oldestDir[FILE_NAME_LEN] = {0};
       if (!getOldestDir(oldestDir))
@@ -325,10 +357,16 @@ bool checkFreeStorage()
       }
       ESP_LOGW(TAG, "Deleting oldest folder: %s", oldestDir);
       deleteFolderOrFile(oldestDir);
-      freeSize = getSDFreeSpace() / 1024;
+      size_t newFreeSize = getSDFreeSpace();
+      if (newFreeSize <= freeSize)
+      {
+        ESP_LOGW(TAG, "Deletion of %s did not free space; stopping auto-delete", oldestDir);
+        break;
+      }
+      freeSize = newFreeSize;
     }
     ESP_LOGI(TAG, "Storage free space: %lu MB", (unsigned long)(getSDFreeSpace() / 1024));
-    res = freeSize >= sdMinCardFreeSpace;
+    res = freeSize >= minFreeSize;
   }
   return res;
 }
